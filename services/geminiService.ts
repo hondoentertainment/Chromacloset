@@ -36,30 +36,20 @@ const ITEM_SCHEMA = {
     confidence: {
       type: Type.NUMBER,
       description: "Confidence score from 0 to 1",
+    },
+    box_2d: {
+      type: Type.ARRAY,
+      items: { type: Type.NUMBER },
+      description: "Normalized bounding box [ymin, xmin, ymax, xmax] from 0 to 1000",
     }
   },
-  required: ["category", "subcategory", "dominantColorHex", "colorName", "colorFamily", "patternType", "confidence"]
+  required: ["category", "subcategory", "dominantColorHex", "colorName", "colorFamily", "patternType", "confidence", "box_2d"]
 };
 
-/**
- * Extracts JSON from a string, stripping markdown code blocks if present.
- */
-const extractJson = (text: string) => {
-  try {
-    const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/```([\s\S]*?)```/);
-    const cleanedText = jsonMatch ? jsonMatch[1] : text;
-    return JSON.parse(cleanedText);
-  } catch (e) {
-    console.error("Failed to parse AI JSON response", e);
-    return [];
-  }
-};
-
-export const analyzeClosetImage = async (base64Image: string): Promise<Partial<WardrobeItem>[]> => {
+export const analyzeClosetImage = async (base64Image: string): Promise<any[]> => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   try {
-    // Ensure we only send the base64 data part
     const base64Data = base64Image.includes(',') ? base64Image.split(',')[1] : base64Image;
 
     const imagePart = {
@@ -70,7 +60,7 @@ export const analyzeClosetImage = async (base64Image: string): Promise<Partial<W
     };
     
     const textPart = {
-      text: "Analyze this wardrobe photo. List every distinct clothing item or accessory found. Return a JSON array of objects following the specified schema. Be precise with colors.",
+      text: "Analyze this wardrobe photo. Detect and localize EVERY distinct clothing item or accessory. For each item, provide its attributes and a [ymin, xmin, ymax, xmax] bounding box in normalized coordinates (0-1000). Return a JSON array.",
     };
 
     const response = await ai.models.generateContent({
@@ -86,9 +76,73 @@ export const analyzeClosetImage = async (base64Image: string): Promise<Partial<W
     });
 
     const rawText = response.text || "[]";
-    return extractJson(rawText);
+    return JSON.parse(rawText);
   } catch (error) {
     console.error("Gemini Analysis Error:", error);
+    throw error;
+  }
+};
+
+export const processQRCode = async (base64Image: string): Promise<Partial<WardrobeItem> | null> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
+  try {
+    const base64Data = base64Image.includes(',') ? base64Image.split(',')[1] : base64Image;
+
+    const imagePart = {
+      inlineData: {
+        mimeType: "image/jpeg",
+        data: base64Data,
+      },
+    };
+    
+    const textPart = {
+      text: "Extract the content from the QR code in this image. The QR code should contain product details for a clothing item. Return only the JSON object.",
+    };
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: { parts: [imagePart, textPart] },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: ITEM_SCHEMA,
+      },
+    });
+
+    const rawText = response.text || "{}";
+    return JSON.parse(rawText);
+  } catch (error) {
+    console.error("Gemini QR Processing Error:", error);
+    throw error;
+  }
+};
+
+export const generateClosetIcon = async (vibe: string = "minimalist and modern", colorContext: string = "a spectrum of vibrant colors"): Promise<string> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
+  try {
+    const prompt = `A ${vibe} brand icon for a digital wardrobe app called Chromacloset. The icon features a stylized open closet with neatly arranged clothes hanging on a rack, showcasing ${colorContext}. High-end vector art style, clean lines, professional branding, white background.`;
+    
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: {
+        parts: [{ text: prompt }],
+      },
+      config: {
+        imageConfig: {
+          aspectRatio: "1:1"
+        }
+      }
+    });
+
+    for (const part of response.candidates[0].content.parts) {
+      if (part.inlineData) {
+        return `data:image/png;base64,${part.inlineData.data}`;
+      }
+    }
+    throw new Error("No image data received");
+  } catch (error) {
+    console.error("Image Generation Error:", error);
     throw error;
   }
 };

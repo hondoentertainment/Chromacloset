@@ -1,13 +1,34 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
-import { WardrobeItem } from '../types';
+import { WardrobeItem, ScanResult } from '../types';
+import { generateClosetIcon } from '../services/geminiService';
 
 interface DashboardProps {
   items: WardrobeItem[];
+  scans: ScanResult[];
+  onDeleteScan: (timestamp: number) => void;
+  totalScannedCount: number;
+  closetIcon: string | null;
+  onIconUpdate: (iconUrl: string) => void;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ items }) => {
+const STYLE_VIBES = [
+  { id: 'minimalist', label: 'Minimalist', desc: 'Clean lines, airy space' },
+  { id: 'avant-garde', label: 'Avant-Garde', desc: 'Bold, artistic, unique' },
+  { id: 'vintage', label: 'Vintage', desc: 'Classic, warm, nostalgic' },
+  { id: 'brutalist', label: 'Brutalist', desc: 'Raw, edgy, geometric' },
+  { id: 'organic', label: 'Organic', desc: 'Soft shapes, natural' }
+];
+
+export const Dashboard: React.FC<DashboardProps> = ({ 
+  items, scans, onDeleteScan, totalScannedCount, closetIcon, onIconUpdate 
+}) => {
+  const [isStudioOpen, setIsStudioOpen] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [selectedVibe, setSelectedVibe] = useState(STYLE_VIBES[0]);
+  const [genProgress, setGenProgress] = useState(0);
+
   const stats = useMemo(() => {
     const total = items.length;
     const colors = Array.from(new Set(items.map(i => i.dominantColorHex))).length;
@@ -23,110 +44,300 @@ export const Dashboard: React.FC<DashboardProps> = ({ items }) => {
       return acc;
     }, {} as Record<string, number>);
 
-    const mostCommonColor = items.length > 0 
-      ? items.reduce((a, b, i, arr) => 
-          (arr.filter(v => v.colorName === a.colorName).length >= arr.filter(v => v.colorName === b.colorName).length ? a : b)
-        ).colorName
-      : 'N/A';
+    // FIX: Explicitly cast counts to number to resolve "The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type" error.
+    const mostCommonColorFamily = items.length > 0 
+      ? Object.entries(familyCounts).sort((a, b) => (b[1] as number) - (a[1] as number))[0][0]
+      : 'vibrant colors';
 
     return { 
       total, colors, families, 
-      mostCommonColor,
+      mostCommonColorFamily,
       familyData: Object.entries(familyCounts).map(([name, value]) => ({ name, value })),
       categoryData: Object.entries(categoryCounts).map(([name, value]) => ({ name, value }))
     };
   }, [items]);
 
-  if (items.length === 0) {
-    return (
-      <div className="text-center py-20">
-        <p className="text-slate-400">No items found. Start by scanning your closet.</p>
-      </div>
-    );
+  const handleGenerateInStudio = async () => {
+    setIsGenerating(true);
+    setGenProgress(10);
+    const interval = setInterval(() => {
+      setGenProgress(p => p < 90 ? p + Math.random() * 15 : p);
+    }, 800);
+
+    try {
+      const colorContext = items.length > 0 
+        ? `a palette focused on ${stats.mostCommonColorFamily} shades`
+        : "a beautiful spectrum of vibrant colors";
+      
+      const iconUrl = await generateClosetIcon(selectedVibe.id, colorContext);
+      onIconUpdate(iconUrl);
+      setGenProgress(100);
+      setTimeout(() => setGenProgress(0), 1000);
+    } catch (err) {
+      alert("Design Studio encountered a glitch. Please try again.");
+    } finally {
+      clearInterval(interval);
+      setIsGenerating(false);
+    }
+  };
+
+  if (items.length === 0 && totalScannedCount === 0) {
+    return null;
   }
 
   return (
     <div className="space-y-8 py-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: 'Total Items', value: stats.total, icon: '👕' },
-          { label: 'Unique Colors', value: stats.colors, icon: '🎨' },
-          { label: 'Color Families', value: stats.families, icon: '🌈' },
-          { label: 'Top Shade', value: stats.mostCommonColor, icon: '✨' },
-        ].map((stat, idx) => (
-          <div key={idx} className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-            <div className="text-2xl mb-1">{stat.icon}</div>
-            <div className="text-sm font-medium text-slate-500 mb-1">{stat.label}</div>
-            <div className="text-2xl font-bold text-slate-900">{stat.value}</div>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-8">
-        <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-          <h3 className="text-lg font-bold text-slate-900 mb-6">Inventory by Family</h3>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={stats.familyData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
-                <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
-                <Tooltip 
-                  cursor={{ fill: '#f8fafc' }}
-                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                />
-                <Bar dataKey="value" fill="#4f46e5" radius={[4, 4, 0, 0]} barSize={40} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-          <h3 className="text-lg font-bold text-slate-900 mb-6">Inventory by Category</h3>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={stats.categoryData}
-                  innerRadius={60}
-                  outerRadius={80}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {stats.categoryData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f59e0b'][index % 5]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="flex flex-wrap justify-center gap-4 mt-4">
-            {stats.categoryData.map((entry, index) => (
-              <div key={index} className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f59e0b'][index % 5] }}></div>
-                <span className="text-xs font-medium text-slate-600 capitalize">{entry.name} ({entry.value})</span>
+      {/* Design Studio Modal */}
+      {isStudioOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xl">
+          <div className="bg-white w-full max-w-4xl rounded-[3rem] shadow-2xl overflow-hidden flex flex-col md:flex-row h-[90vh] md:h-auto">
+            {/* Left: Previews */}
+            <div className="md:w-1/2 bg-slate-50 p-8 flex flex-col items-center justify-center gap-8 relative overflow-hidden">
+              <div className="absolute top-8 left-8">
+                <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">Brand Studio</span>
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
+              
+              <div className="relative group">
+                <div className={`w-48 h-48 rounded-[3rem] bg-white shadow-2xl overflow-hidden border-8 border-white transition-all ${isGenerating ? 'scale-95 grayscale' : ''}`}>
+                  {closetIcon ? (
+                    <img src={closetIcon} alt="Brand Art" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-slate-200">
+                      <svg className="w-16 h-16" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                    </div>
+                  )}
+                </div>
+                {isGenerating && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                )}
+              </div>
 
-      <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
-        <h3 className="text-lg font-bold text-slate-900 mb-6">Wardrobe Color Spectrum</h3>
-        <div className="flex flex-wrap gap-2">
-          {items.map((item) => (
-            <div 
-              key={item.id}
-              className="group relative w-12 h-12 rounded-lg border border-slate-200 transition-transform hover:scale-110 cursor-pointer"
-              style={{ backgroundColor: item.dominantColorHex }}
-              title={`${item.colorName} ${item.subcategory}`}
-            >
-              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 bg-black/20 rounded-lg flex items-center justify-center pointer-events-none">
-                <span className="text-[8px] text-white font-bold">{item.dominantColorHex}</span>
+              <div className="w-full grid grid-cols-3 gap-4">
+                 {[
+                   { label: 'App Icon', class: 'rounded-2xl shadow-lg border-2 border-white' },
+                   { label: 'Hang Tag', class: 'rounded-sm shadow-md h-24 w-12 border border-slate-200' },
+                   { label: 'Tote Bag', class: 'rounded-t-3xl shadow-lg h-24 w-24 bg-white border border-slate-100' }
+                 ].map((mock, i) => (
+                   <div key={i} className="flex flex-col items-center gap-2">
+                     <div className={`${mock.class} overflow-hidden bg-white flex items-center justify-center`}>
+                        {closetIcon && <img src={closetIcon} className="w-full h-full object-cover opacity-80" />}
+                     </div>
+                     <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">{mock.label}</span>
+                   </div>
+                 ))}
               </div>
             </div>
+
+            {/* Right: Controls */}
+            <div className="md:w-1/2 p-10 flex flex-col">
+              <div className="flex justify-between items-start mb-10">
+                <h3 className="text-3xl font-black text-slate-900">Design Studio</h3>
+                <button onClick={() => setIsStudioOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+                  <svg className="w-6 h-6 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+              </div>
+
+              <div className="flex-1 space-y-8">
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 block">Select Artistic Vibe</label>
+                  <div className="space-y-2">
+                    {STYLE_VIBES.map(v => (
+                      <button 
+                        key={v.id}
+                        onClick={() => setSelectedVibe(v)}
+                        className={`w-full flex items-center justify-between p-4 rounded-2xl border transition-all text-left ${
+                          selectedVibe.id === v.id ? 'bg-indigo-50 border-indigo-200 shadow-sm' : 'border-slate-100 hover:border-indigo-100'
+                        }`}
+                      >
+                        <div>
+                          <p className={`text-sm font-bold ${selectedVibe.id === v.id ? 'text-indigo-900' : 'text-slate-800'}`}>{v.label}</p>
+                          <p className="text-xs text-slate-500">{v.desc}</p>
+                        </div>
+                        {selectedVibe.id === v.id && (
+                          <div className="w-5 h-5 bg-indigo-600 rounded-full flex items-center justify-center">
+                            <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20"><path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" /></svg>
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100">
+                   <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-1 block">Contextual Palette</span>
+                   <p className="text-xs text-slate-600 leading-relaxed">Studio will prioritize <strong>{stats.mostCommonColorFamily}</strong> hues based on your wardrobe DNA.</p>
+                </div>
+              </div>
+
+              <div className="mt-10 space-y-4">
+                {isGenerating && (
+                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                    <div className="h-full bg-indigo-600 transition-all duration-500" style={{ width: `${genProgress}%` }}></div>
+                  </div>
+                )}
+                <button 
+                  onClick={handleGenerateInStudio}
+                  disabled={isGenerating}
+                  className="w-full py-5 bg-slate-900 text-white rounded-2xl font-bold shadow-2xl hover:bg-black transition-all flex items-center justify-center gap-3 disabled:opacity-50"
+                >
+                  {isGenerating ? 'Rendering Brand...' : 'Generate Brand Art'}
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a2 2 0 00-1.96 1.414l-.477 2.387a2 2 0 00.547 1.022l1.414 1.414a2 2 0 001.022.547l2.387.477a2 2 0 001.96-1.414l.477-2.387a2 2 0 00-.547-1.022l-1.414-1.414z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.757 14.757l3.182-3.182M12 21a9 9 0 110-18 9 9 0 010 18zM9 9a1 1 0 000 2h3m-3 3h3" /></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Main Stats */}
+        <div className="lg:col-span-9 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          {[
+            { label: 'Current Items', value: stats.total, icon: '👕' },
+            { label: 'Lifetime Scans', value: totalScannedCount, icon: '📈' },
+            { label: 'Unique Colors', value: stats.colors, icon: '🎨' },
+            { label: 'Color Families', value: stats.families, icon: '🌈' },
+            { label: 'Top Family', value: stats.mostCommonColorFamily, icon: '✨' },
+          ].map((stat, idx) => (
+            <div key={idx} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm transition-transform hover:scale-[1.02]">
+              <div className="text-xl mb-1">{stat.icon}</div>
+              <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 leading-none">{stat.label}</div>
+              <div className="text-xl font-bold text-slate-900 truncate">{stat.value}</div>
+            </div>
           ))}
+        </div>
+
+        {/* Brand Identity Card */}
+        <div 
+          onClick={() => setIsStudioOpen(true)}
+          className="lg:col-span-3 bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center group cursor-pointer hover:border-indigo-200 hover:shadow-lg transition-all"
+        >
+          <div className="relative">
+            <div className={`w-20 h-20 rounded-2xl overflow-hidden border-2 border-slate-50 shadow-inner flex items-center justify-center bg-slate-50 transition-all`}>
+              {closetIcon ? (
+                <img src={closetIcon} alt="Closet Identity" className="w-full h-full object-cover" />
+              ) : (
+                <svg className="w-10 h-10 text-slate-200" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-7.714 2.143L11 21l-2.286-6.857L1 12l7.714-2.143L11 3z" />
+                </svg>
+              )}
+            </div>
+            <div className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+            </div>
+          </div>
+          <div className="mt-3">
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">Design Studio</p>
+            <p className="text-xs font-bold text-slate-800 mt-1">Refine Identity</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-12 gap-8">
+        <div className="lg:col-span-8 space-y-8">
+          {items.length > 0 ? (
+            <>
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                <h3 className="text-lg font-bold text-slate-900 mb-6">Inventory by Family</h3>
+                <div className="h-64">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={stats.familyData}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="name" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                      <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+                      <Tooltip 
+                        cursor={{ fill: '#f8fafc' }}
+                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                      />
+                      <Bar dataKey="value" fill="#4f46e5" radius={[4, 4, 0, 0]} barSize={40} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+                <h3 className="text-lg font-bold text-slate-900 mb-6">Inventory by Category</h3>
+                <div className="flex flex-col md:flex-row items-center gap-8">
+                  <div className="h-64 w-full md:w-1/2">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={stats.categoryData}
+                          innerRadius={60}
+                          outerRadius={80}
+                          paddingAngle={5}
+                          dataKey="value"
+                        >
+                          {stats.categoryData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f59e0b'][index % 5]} />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="w-full md:w-1/2 grid grid-cols-2 gap-4">
+                    {stats.categoryData.map((entry, index) => (
+                      <div key={index} className="flex flex-col p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="flex items-center gap-2 mb-1">
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f59e0b'][index % 5] }}></div>
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{entry.name}</span>
+                        </div>
+                        <span className="text-xl font-bold text-slate-800">{entry.value} Items</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="h-full bg-white p-12 rounded-3xl border border-slate-100 shadow-sm flex flex-col items-center justify-center text-center">
+              <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
+                <svg className="w-8 h-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+              </div>
+              <h4 className="font-bold text-slate-800">No Inventory Data</h4>
+              <p className="text-sm text-slate-500 max-w-xs mt-2">Add items to see your wardrobe analytics and color balance.</p>
+            </div>
+          )}
+        </div>
+
+        <div className="lg:col-span-4 space-y-6">
+          <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm sticky top-24">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <svg className="w-5 h-5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                Closet History
+              </h3>
+            </div>
+            
+            <div className="space-y-6 relative before:absolute before:left-2 before:top-2 before:bottom-2 before:w-px before:bg-slate-100">
+              {scans.length > 0 ? (
+                scans.map((scan) => (
+                  <div key={scan.timestamp} className="relative pl-8 group">
+                    <div className="absolute left-0 top-1 w-4 h-4 rounded-full bg-white border-4 border-indigo-500 z-10"></div>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-tighter">
+                          {new Date(scan.timestamp).toLocaleDateString()}
+                        </p>
+                        <p className="text-sm font-bold text-slate-800 mt-1">Added {scan.items.length} items</p>
+                      </div>
+                      <button 
+                        onClick={() => onDeleteScan(scan.timestamp)}
+                        className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-slate-400 italic pl-8">No closet history yet.</p>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>

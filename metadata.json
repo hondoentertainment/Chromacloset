@@ -2,6 +2,7 @@
   "name": "Chromacloset",
   "description": "A personal wardrobe intelligence app that scans your closet to create a precise, color-accurate inventory using Gemini AI.",
   "requestFramePermissions": [
-    "camera"
+    "camera",
+    "geolocation"
   ]
 }
