@@ -6,6 +6,7 @@ import { Dashboard } from './components/Dashboard';
 import { ColorExplorer } from './components/ColorExplorer';
 import { StylistModule } from './components/StylistModule';
 import { WardrobeItem, ScanResult } from './types';
+import { trackEvent } from './services/analyticsService';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'scan' | 'explorer' | 'stylist'>('dashboard');
@@ -46,6 +47,10 @@ const App: React.FC = () => {
   });
 
   useEffect(() => {
+    trackEvent('app_opened');
+  }, []);
+
+  useEffect(() => {
     try {
       localStorage.setItem('chromacloset_items', JSON.stringify(items));
       localStorage.setItem('chromacloset_scans', JSON.stringify(scans));
@@ -61,6 +66,7 @@ const App: React.FC = () => {
   const handleScanComplete = (newItems: WardrobeItem[]) => {
     setItems(prev => [...prev, ...newItems]);
     setTotalScannedCount(prev => prev + newItems.length);
+    trackEvent('scan_completed', { items_detected: newItems.length });
     
     const newScan: ScanResult = {
       items: newItems,
@@ -75,6 +81,7 @@ const App: React.FC = () => {
     if (!scanToDelete) return;
 
     if (confirm(`Remove this scan record and its ${scanToDelete.items.length} items from your closet?`)) {
+      trackEvent('scan_deleted', { items_removed: scanToDelete.items.length });
       const itemIdsToRemove = new Set(scanToDelete.items.map(i => i.id));
       setItems(prev => prev.filter(item => !itemIdsToRemove.has(item.id)));
       setScans(prev => prev.filter(s => s.timestamp !== timestamp));
@@ -83,6 +90,7 @@ const App: React.FC = () => {
 
   const clearCloset = () => {
     if (confirm("Are you sure you want to clear your entire inventory? This cannot be undone.")) {
+      trackEvent('closet_reset', { items_before_reset: items.length, scans_before_reset: scans.length });
       setItems([]);
       setScans([]);
       setTotalScannedCount(0);
@@ -91,11 +99,18 @@ const App: React.FC = () => {
     }
   };
 
+  const handleTabChange = (tab: 'dashboard' | 'scan' | 'explorer' | 'stylist') => {
+    if (tab !== activeTab) {
+      trackEvent('tab_switched', { to_tab: tab });
+    }
+    setActiveTab(tab);
+  };
+
   return (
     <div className="min-h-screen bg-slate-50">
       <Header 
         activeTab={activeTab} 
-        setActiveTab={setActiveTab} 
+        setActiveTab={handleTabChange} 
         closetIcon={closetIcon} 
       />
       
@@ -151,7 +166,7 @@ const App: React.FC = () => {
               Unlock a deep analysis of your wardrobe's color DNA and get personalized styling with Gemini AI.
             </p>
             <button
-              onClick={() => setActiveTab('scan')}
+              onClick={() => handleTabChange('scan')}
               className="px-10 py-5 bg-indigo-600 text-white rounded-[1.5rem] font-bold shadow-2xl shadow-indigo-200 hover:bg-indigo-700 hover:scale-105 active:scale-95 transition-all text-lg"
             >
               Start First Scan
