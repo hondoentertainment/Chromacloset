@@ -49,6 +49,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     trackEvent('app_opened', { source: 'browser' });
+    trackEvent('app_opened');
   }, []);
 
   useEffect(() => {
@@ -75,6 +76,7 @@ const App: React.FC = () => {
         latency_ms: telemetry.latencyMs,
       });
     }
+    trackEvent('scan_completed', { items_detected: newItems.length });
     
     const newScan: ScanResult = {
       items: newItems,

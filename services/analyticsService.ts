@@ -36,6 +36,24 @@ export interface AnalyticsEvent<T extends AnalyticsEventName = AnalyticsEventNam
   name: T;
   timestamp: string;
   payload: AnalyticsEventPayloadMap[T];
+export type AnalyticsEventName =
+  | 'app_opened'
+  | 'tab_switched'
+  | 'scan_started'
+  | 'scan_completed'
+  | 'scan_deleted'
+  | 'closet_reset'
+  | 'outfits_requested'
+  | 'outfits_generated'
+  | 'outfit_saved'
+  | 'outfit_unsaved'
+  | 'stylist_chat_opened'
+  | 'stylist_chat_message_sent';
+
+export interface AnalyticsEvent {
+  name: AnalyticsEventName;
+  timestamp: string;
+  payload?: Record<string, unknown>;
 }
 
 const EVENT_STORAGE_KEY = 'chromacloset_analytics_events';
@@ -45,6 +63,8 @@ const canUseStorage = (): boolean => typeof window !== 'undefined' && typeof loc
 
 export const trackEvent = <T extends AnalyticsEventName>(name: T, payload: AnalyticsEventPayloadMap[T]) => {
   const event: AnalyticsEvent<T> = {
+export const trackEvent = (name: AnalyticsEventName, payload?: Record<string, unknown>) => {
+  const event: AnalyticsEvent = {
     name,
     payload,
     timestamp: new Date().toISOString(),
@@ -61,5 +81,15 @@ export const trackEvent = <T extends AnalyticsEventName>(name: T, payload: Analy
     }
   }
 
+  try {
+    const raw = localStorage.getItem(EVENT_STORAGE_KEY);
+    const existing: AnalyticsEvent[] = raw ? JSON.parse(raw) : [];
+    const next = [event, ...existing].slice(0, MAX_EVENTS);
+    localStorage.setItem(EVENT_STORAGE_KEY, JSON.stringify(next));
+  } catch (error) {
+    console.warn('Analytics storage unavailable', error);
+  }
+
+  // Keep a debug trail during local development.
   console.info('[analytics]', event);
 };
