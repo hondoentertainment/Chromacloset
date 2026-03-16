@@ -241,3 +241,50 @@ Track the following events:
 - Local state + storage keys include closet items, scans, total scanned count, and brand icon.
 - Environment requires API key configuration prior to AI workflows.
 
+
+## 12. Recommended Next Steps (Execution Plan)
+
+### Next 1–2 Days (Stabilize Current Instrumentation)
+1. **Add analytics dedupe for scan completion**
+   - Current flow can emit `scan_completed` in both scan module and app-level save path.
+   - Decide canonical point (recommended: on user-confirmed save) and remove duplicate emission.
+
+2. **Harden analytics helper for SSR/dev tooling safety**
+   - Guard `localStorage` and `window` usage behind runtime checks.
+   - Keep no-op behavior when storage is unavailable.
+
+3. **Add typed analytics payload contracts**
+   - Replace generic `Record<string, unknown>` payloads with event-specific types.
+   - Prevent accidental schema drift before external analytics integration.
+
+### Next 3–5 Days (Ship Measurable Product Value)
+4. **Implement lightweight analytics viewer in a dev-only panel**
+   - Display recent event stream from local storage for QA verification.
+   - Include filters for scan/stylist/navigation funnels.
+
+5. **Instrument funnel-critical errors**
+   - Add `scan_failed`, `outfits_generation_failed`, and `chat_failed` events with reason buckets.
+   - Enables drop-off diagnosis beyond success-only events.
+
+6. **Add first-pass correction UX for scan review**
+   - Allow editing category/subcategory/color before save.
+   - This directly addresses extraction-quality trust and improves dataset quality.
+
+### Next 1–2 Weeks (Foundation for Scale)
+7. **Introduce analytics provider adapter**
+   - Keep `trackEvent` API stable and add pluggable transport (e.g., Segment/PostHog/Amplitude).
+   - Support dual write: local debug log + remote provider.
+
+8. **Define baseline product dashboard metrics**
+   - Activation: first scan completion rate.
+   - Engagement: outfit generation/session and lookbook saves/user.
+   - Retention: second scan within 14 days.
+
+9. **Create acceptance tests for key journeys**
+   - Scan upload -> review -> save.
+   - Stylist generation -> save lookbook item.
+   - Chat open -> send message -> response render.
+
+### Prioritization Rationale
+- Focus first on **data quality** (clean instrumentation + error visibility), then on **user trust** (editable scan results), then on **scale readiness** (provider integration and dashboards).
+- This sequencing minimizes rework while turning the PRD into measurable execution.

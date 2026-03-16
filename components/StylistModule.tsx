@@ -202,6 +202,7 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
       const modelMsg: ChatMessage = { role: 'model', text: result.text };
       setChatMessages(prev => [...prev, modelMsg]);
     } catch (err) {
+      trackEvent('chat_failed', { reason: 'send_error', persona });
       console.error(err);
     } finally {
       setIsSending(false);
@@ -221,6 +222,7 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
       setOutfits(result);
       trackEvent('outfits_generated', { count: result.length });
     } catch (error) {
+      trackEvent('outfits_generation_failed', { reason: 'service_error', persona, occasion });
       showToast("Style engine is warming up.");
     } finally {
       setLoading(false);

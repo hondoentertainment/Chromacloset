@@ -6,6 +6,7 @@ import { Dashboard } from './components/Dashboard';
 import { ColorExplorer } from './components/ColorExplorer';
 import { StylistModule } from './components/StylistModule';
 import { WardrobeItem, ScanResult } from './types';
+import type { ScanTelemetry } from './components/ScanModule';
 import { trackEvent } from './services/analyticsService';
 
 const App: React.FC = () => {
@@ -47,6 +48,7 @@ const App: React.FC = () => {
   });
 
   useEffect(() => {
+    trackEvent('app_opened', { source: 'browser' });
     trackEvent('app_opened');
   }, []);
 
@@ -63,9 +65,17 @@ const App: React.FC = () => {
     }
   }, [items, scans, totalScannedCount, closetIcon]);
 
-  const handleScanComplete = (newItems: WardrobeItem[]) => {
+  const handleScanComplete = (newItems: WardrobeItem[], telemetry?: ScanTelemetry) => {
     setItems(prev => [...prev, ...newItems]);
     setTotalScannedCount(prev => prev + newItems.length);
+    if (telemetry) {
+      trackEvent('scan_completed', {
+        source: telemetry.source,
+        mode: telemetry.mode,
+        items_detected: newItems.length,
+        latency_ms: telemetry.latencyMs,
+      });
+    }
     trackEvent('scan_completed', { items_detected: newItems.length });
     
     const newScan: ScanResult = {
