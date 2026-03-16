@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { generateOutfits, analyzeWardrobeGaps, searchForGapItems, createStylingChat } from '../services/stylistService';
 import { WardrobeItem, OutfitRecommendation, WardrobeGap, StylePersona, ChatMessage } from '../types';
+import { trackEvent } from '../services/analyticsService';
 
 interface StylistModuleProps {
   items: WardrobeItem[];
@@ -191,6 +192,7 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
     if (!userInput.trim() || isSending) return;
 
     const userMsg: ChatMessage = { role: 'user', text: userInput };
+    trackEvent('stylist_chat_message_sent', { persona, message_length: userInput.trim().length });
     setChatMessages(prev => [...prev, userMsg]);
     setUserInput('');
     setIsSending(true);
@@ -200,6 +202,7 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
       const modelMsg: ChatMessage = { role: 'model', text: result.text };
       setChatMessages(prev => [...prev, modelMsg]);
     } catch (err) {
+      trackEvent('chat_failed', { reason: 'send_error', persona });
       console.error(err);
     } finally {
       setIsSending(false);
@@ -208,10 +211,18 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
 
   const handleGenerate = async () => {
     setLoading(true);
+    trackEvent('outfits_requested', {
+      occasion,
+      persona,
+      weather_present: Boolean(weather),
+      inventory_size: items.length,
+    });
     try {
       const result = await generateOutfits(items, occasion, persona, weather || undefined);
       setOutfits(result);
+      trackEvent('outfits_generated', { count: result.length });
     } catch (error) {
+      trackEvent('outfits_generation_failed', { reason: 'service_error', persona, occasion });
       showToast("Style engine is warming up.");
     } finally {
       setLoading(false);
@@ -222,10 +233,12 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
     const isAlreadySaved = savedOutfits.some(o => o.id === outfit.id);
     if (isAlreadySaved) {
       setSavedOutfits(prev => prev.filter(o => o.id !== outfit.id));
+      trackEvent('outfit_unsaved', { outfit_id: outfit.id });
       showToast("Removed from Lookbook");
     } else {
       const newOutfit = { ...outfit, isSaved: true, dateSaved: Date.now() };
       setSavedOutfits(prev => [newOutfit, ...prev]);
+      trackEvent('outfit_saved', { outfit_id: outfit.id });
       showToast("Added to Lookbook ✨");
     }
   };
@@ -333,7 +346,13 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
           <h2 className="text-4xl font-black text-slate-900 tracking-tight">Style Concierge</h2>
           <div className="flex items-center gap-4">
              <p className="text-slate-500 text-lg">Intelligent wardrobe coordination.</p>
-             <button onClick={() => setIsChatOpen(true)} className="flex items-center gap-2 bg-white px-4 py-1.5 rounded-full border border-slate-200 text-sm font-bold text-slate-700 hover:border-indigo-600 transition-all shadow-sm">
+             <button
+               onClick={() => {
+                 trackEvent('stylist_chat_opened', { persona });
+                 setIsChatOpen(true);
+               }}
+               className="flex items-center gap-2 bg-white px-4 py-1.5 rounded-full border border-slate-200 text-sm font-bold text-slate-700 hover:border-indigo-600 transition-all shadow-sm"
+             >
                <span className="w-2 h-2 bg-indigo-600 rounded-full animate-ping"></span>
                Consult Gemini
              </button>
