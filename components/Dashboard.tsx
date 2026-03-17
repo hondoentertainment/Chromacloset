@@ -109,9 +109,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
       }
     } catch (error) {
       trackEvent('dashboard_gap_suggestion_failed', { reason: 'service_error' });
-        setGapError('No clear gap found yet — your closet may already be well balanced.');
-      }
-    } catch (error) {
       setGapError('Could not generate a suggestion right now. Please retry.');
     } finally {
       setIsGapLoading(false);

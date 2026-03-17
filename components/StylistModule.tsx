@@ -247,8 +247,6 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
     } catch (error) {
       trackEvent('outfits_generation_failed', { reason: 'service_error', persona, occasion });
       setGenerationError('We could not generate outfits right now. Please retry.');
-    } catch (error) {
-      trackEvent('outfits_generation_failed', { reason: 'service_error', persona, occasion });
       showToast("Style engine is warming up.");
     } finally {
       setLoading(false);
