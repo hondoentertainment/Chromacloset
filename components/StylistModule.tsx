@@ -19,6 +19,7 @@ interface OutfitCardProps {
   onToggleSave: (outfit: OutfitRecommendation) => void;
   onUpdateUsage?: (id: string) => void;
   onUpdateNotes?: (id: string, notes: string) => void;
+  onSetFeedback?: (id: string, feedback: 'love' | 'skip', source: 'curator' | 'lookbook') => void;
 }
 
 // Defining OutfitCard outside of StylistModule resolves the TS "Property 'key' does not exist" error 
@@ -30,7 +31,8 @@ const OutfitCard: React.FC<OutfitCardProps> = ({
   getItemById, 
   onToggleSave, 
   onUpdateUsage, 
-  onUpdateNotes 
+  onUpdateNotes,
+  onSetFeedback 
 }) => {
   const [isEditingNotes, setIsEditingNotes] = useState(false);
   const [notes, setNotes] = useState(outfit.userNotes || '');
@@ -125,6 +127,24 @@ const OutfitCard: React.FC<OutfitCardProps> = ({
           </div>
         )}
       </div>
+
+
+      {onSetFeedback && (
+        <div className="mt-2 flex gap-2">
+          <button
+            onClick={() => onSetFeedback(outfit.id, 'love', isSavedView ? 'lookbook' : 'curator')}
+            className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${outfit.outfitFeedback === 'love' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-200'}`}
+          >
+            👍 Love this
+          </button>
+          <button
+            onClick={() => onSetFeedback(outfit.id, 'skip', isSavedView ? 'lookbook' : 'curator')}
+            className={`flex-1 py-2 rounded-xl text-xs font-bold border transition-all ${outfit.outfitFeedback === 'skip' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-white text-slate-600 border-slate-200 hover:border-rose-200'}`}
+          >
+            👎 Skip
+          </button>
+        </div>
+      )}
 
       {!isSavedView && (
         <button 
@@ -260,6 +280,14 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
     setSavedOutfits(prev => prev.map(o => 
       o.id === id ? { ...o, userNotes: notes } : o
     ));
+  };
+
+
+  const setOutfitFeedback = (id: string, feedback: 'love' | 'skip', source: 'curator' | 'lookbook') => {
+    setOutfits(prev => prev.map(o => o.id === id ? { ...o, outfitFeedback: feedback } : o));
+    setSavedOutfits(prev => prev.map(o => o.id === id ? { ...o, outfitFeedback: feedback } : o));
+    trackEvent('outfit_feedback_given', { outfit_id: id, feedback, source });
+    showToast(feedback === 'love' ? 'Preference saved: Love this look' : 'Preference saved: Skip this look');
   };
 
   const getItemById = (id: string) => items.find(i => i.id === id);
@@ -486,6 +514,7 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
                     isAlreadySaved={savedOutfits.some(so => so.id === o.id)}
                     getItemById={getItemById}
                     onToggleSave={toggleSaveOutfit}
+                    onSetFeedback={setOutfitFeedback}
                   />
                 ))}
               </div>
@@ -517,6 +546,7 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
                   onToggleSave={toggleSaveOutfit}
                   onUpdateUsage={updateOutfitUsage}
                   onUpdateNotes={updateOutfitNotes}
+                  onSetFeedback={setOutfitFeedback}
                 />
               ))}
             </div>

@@ -52,6 +52,7 @@ export interface OutfitRecommendation {
   dateSaved?: number;
   lastWorn?: number;
   userNotes?: string;
+  outfitFeedback?: "love" | "skip";
 }
 
 export interface WardrobeGap {

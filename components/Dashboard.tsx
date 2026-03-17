@@ -4,6 +4,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { WardrobeItem, ScanResult } from '../types';
 import { generateClosetIcon } from '../services/geminiService';
 import { analyzeWardrobeGaps } from '../services/stylistService';
+import { trackEvent } from '../services/analyticsService';
 
 interface DashboardProps {
   items: WardrobeItem[];
@@ -91,11 +92,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
     setIsGapLoading(true);
     setGapError(null);
+    trackEvent('dashboard_gap_suggestion_requested', { inventory_size: items.length });
 
     try {
       const gaps = await analyzeWardrobeGaps(items);
       setGapSuggestion(gaps[0] || null);
       if (!gaps.length) {
+        trackEvent('dashboard_gap_suggestion_failed', { reason: 'no_gap' });
+        setGapError('No clear gap found yet — your closet may already be well balanced.');
+      } else {
+        trackEvent('dashboard_gap_suggestion_generated', {
+          item_type: gaps[0].itemType,
+          suggested_color: gaps[0].suggestedColor,
+          priority: gaps[0].priority
+        });
+      }
+    } catch (error) {
+      trackEvent('dashboard_gap_suggestion_failed', { reason: 'service_error' });
         setGapError('No clear gap found yet — your closet may already be well balanced.');
       }
     } catch (error) {

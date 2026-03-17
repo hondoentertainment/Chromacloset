@@ -29,6 +29,17 @@ export type AnalyticsEventPayloadMap = {
   outfits_generation_failed: { reason: 'service_error'; persona: string; occasion: string };
   outfit_saved: { outfit_id: string };
   outfit_unsaved: { outfit_id: string };
+  outfit_feedback_given: { outfit_id: string; feedback: 'love' | 'skip'; source: 'curator' | 'lookbook' };
+  stylist_chat_opened: { persona: string };
+  stylist_chat_message_sent: { persona: string; message_length: number };
+  chat_failed: { reason: 'send_error'; persona: string };
+  dashboard_gap_suggestion_requested: { inventory_size: number };
+  dashboard_gap_suggestion_generated: {
+    item_type: string;
+    suggested_color: string;
+    priority: 'high' | 'medium' | 'low';
+  };
+  dashboard_gap_suggestion_failed: { reason: 'no_gap' | 'service_error' };
   stylist_chat_opened: { persona: string };
   stylist_chat_message_sent: { persona: string; message_length: number };
   chat_failed: { reason: 'send_error'; persona: string };

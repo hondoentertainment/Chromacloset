@@ -210,3 +210,111 @@ Mitigations:
   - Analytics events emitted and visible in debug panel
   - Basic regression pass (`npm run build` + manual smoke path)
 
+
+---
+
+## Roadmap Enhancement: Status, Sequencing, and Ownership
+
+### Current Delivery Snapshot
+- ✅ Completed foundation work:
+  - Typed analytics service + debug panel
+  - Scan review editing and retry/error handling
+  - Outfit normalization and relevance guardrails
+  - Dashboard “Suggested next item” card
+- 🟡 In progress:
+  - Hardening tests around analytics helpers and scan edit flows
+  - Tightening recommendation quality evaluation criteria
+- ⏭️ Next:
+  - Provider adapter + export pathways
+  - Personalization loop and explicit user feedback signals
+
+### Now / Next / Later View
+
+#### Now (0–2 weeks)
+- Stabilize quality gates for shipped roadmap items.
+- Add regression checks for:
+  - scan correction save path
+  - telemetry event integrity
+  - outfit normalization constraints
+- Ship analytics QA checklist as a tracked artifact in repo docs.
+
+#### Next (2–6 weeks)
+- Introduce analytics transport adapter with local+remote dual-write capability.
+- Add color-balance and wardrobe-diversity scoring modules.
+- Add first A/B experiment framework for recommendation prompt variants.
+
+#### Later (6–12 weeks)
+- Build preference learning loop from outfit feedback.
+- Add multi-session planning (calendar/daypart suggestions).
+- Add optional cross-device sync with conflict resolution.
+
+---
+
+## Milestone Plan (Execution-Level)
+
+| Milestone | Target Window | Scope | Exit Criteria |
+|---|---:|---|---|
+| M1: Reliability Baseline | Week 1 | Test + telemetry hardening for scan/stylist flows | No duplicate completion events; retry paths validated |
+| M2: Recommendation Quality v1 | Weeks 2–3 | Composition constraints + duplicate suppression + weather shaping | Outfit save rate improves vs current baseline |
+| M3: Insight Surface Expansion | Weeks 4–5 | Dashboard insight cards + color balance indicators | Higher dashboard-to-stylist clickthrough |
+| M4: Analytics Portability | Weeks 6–7 | Provider adapter + export workflow | Event parity between local stream and adapter output |
+| M5: Personalization Beta | Weeks 8–10 | Feedback-driven ranking and persona adaptation | Measurable lift in repeat stylist sessions |
+
+---
+
+## Responsibility Matrix (Lightweight)
+
+- **Product/PM**
+  - Own KPI definitions, milestone prioritization, release decisions.
+- **Frontend**
+  - Own scan review UX, dashboard insights, stylist flow UX states.
+- **AI/Prompt**
+  - Own recommendation prompt quality and relevance tuning.
+- **Data/Analytics**
+  - Own schema governance, event QA, adapter integration.
+- **QA**
+  - Own smoke plans for each milestone and regression checklists.
+
+---
+
+## Measurement Expansion (beyond current KPIs)
+
+### Funnel Metrics
+- Scan start → review → save completion conversion.
+- Dashboard insight interaction rate.
+- Stylist request → generated → saved outfit conversion.
+
+### Quality Metrics
+- % scanned items marked `isEdited` before save.
+- Failure-rate by event reason bucket (`scan_failed`, `chat_failed`, etc.).
+- Duplicate outfit suppression rate after normalization.
+
+### Retention Metrics
+- 7-day and 14-day return after first successful scan.
+- Repeat stylist-session rate per active user.
+
+---
+
+## Implementation Risks (Enhanced)
+
+1. **Overfitting constraints may reduce creativity**
+   - Mitigation: keep strict rules minimal and run controlled A/B prompt tests.
+
+2. **Telemetry schema drift across components**
+   - Mitigation: central schema ownership + type-checked payload contracts.
+
+3. **Feature accretion in scan review could increase user effort**
+   - Mitigation: progressive disclosure (advanced edit controls collapsed by default).
+
+4. **AI latency impacts interactive UX**
+   - Mitigation: optimistic UI cues, explicit retries, and fail-soft messaging.
+
+---
+
+## Recommended Next PR Sequence
+1. **PR-1:** Add analytics helper tests + scan/stylist smoke checklist doc.
+2. **PR-2:** Add composition quality dashboard metrics and instrumentation.
+3. **PR-3:** Add adapter interface for analytics transport + local export.
+4. **PR-4:** Add first personalization signal capture (`outfit_feedback_given`).
+
+This sequence keeps technical risk low while compounding product insight quality each sprint.

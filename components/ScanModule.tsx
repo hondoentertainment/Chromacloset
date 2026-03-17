@@ -30,6 +30,7 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanErrorSource, setScanErrorSource] = useState<'upload' | 'live' | null>(null);
   const [baselineItems, setBaselineItems] = useState<Record<string, Partial<WardrobeItem>>>({});
+  const [showAdvancedEdits, setShowAdvancedEdits] = useState(true);
 
   const mapScanResultToItem = (res: any, index: number, imageUrl: string): WardrobeItem => ({
     id: `item-${Date.now()}-${index}`,
@@ -281,6 +282,11 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
       trackEvent('scan_failed', { source: 'live', mode, reason: 'processing_error' });
       setScanError('Live scan failed. Ensure subject is well lit and retry.');
       setScanErrorSource('live');
+      }
+    } catch (error) {
+      trackEvent('scan_failed', { source: 'live', mode, reason: 'processing_error' });
+      setScanError('Live scan failed. Ensure subject is well lit and retry.');
+      setScanErrorSource('live');
         setLastScanTelemetry({ source: 'live', mode, latencyMs: Date.now() - startTs });
         trackEvent('scan_completed', {
           source: 'live',
@@ -361,6 +367,38 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
     }) : prev);
   };
 
+
+  const applyFieldToSimilar = <K extends keyof WardrobeItem>(id: string, field: K, value: WardrobeItem[K]) => {
+    if (!detectedItems || !['category', 'patternType', 'colorFamily'].includes(String(field))) return;
+    const source = detectedItems.find(i => i.id === id);
+    if (!source) return;
+
+    const similarIds = detectedItems
+      .filter(i => i.id !== id && i.subcategory.toLowerCase() === source.subcategory.toLowerCase())
+      .map(i => i.id);
+
+    if (!similarIds.length) return;
+
+    setDetectedItems(prev => prev ? prev.map(item => {
+      if (!similarIds.includes(item.id)) return item;
+      const next = { ...item, [field]: value } as WardrobeItem;
+      const baseline = baselineItems[item.id];
+      const isEdited = baseline ? (
+        next.category !== baseline.category ||
+        next.patternType !== baseline.patternType ||
+        next.subcategory !== baseline.subcategory ||
+        next.colorName !== baseline.colorName ||
+        next.colorFamily !== baseline.colorFamily
+      ) : true;
+      return { ...next, isEdited };
+    }) : prev);
+
+    trackEvent('scan_item_edited', {
+      item_id: id,
+      fields: [field as 'category' | 'patternType' | 'colorFamily']
+    });
+  };
+
   const CATEGORY_OPTIONS = Object.values(Category);
   const PATTERN_OPTIONS = Object.values(PatternType);
   const COLOR_FAMILY_OPTIONS = ['Neutral', 'Black', 'White', 'Gray', 'Blue', 'Green', 'Red', 'Pink', 'Purple', 'Yellow', 'Orange', 'Brown'];
@@ -406,6 +444,14 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
             <button onClick={discardScan} className="flex-1 md:flex-none px-6 py-3 border border-slate-200 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-50">
               Discard All
             </button>
+
+            <button
+              onClick={() => setShowAdvancedEdits(v => !v)}
+              className="flex-1 md:flex-none px-6 py-3 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50"
+            >
+              {showAdvancedEdits ? 'Hide Edit Controls' : 'Show Edit Controls'}
+            </button>
+
             <button onClick={confirmSave} className="flex-1 md:flex-none px-10 py-3 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700">
               Add {detectedItems.length} to Closet
             </button>
@@ -500,6 +546,86 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                   </button>
                   </div>
+                </div>
+
+                {showAdvancedEdits && (
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-[10px] font-bold text-slate-500 flex flex-col gap-1">
+                    Category
+                    <select
+                      value={item.category}
+                      onChange={(e) => updateDetectedItem(item.id, 'category', e.target.value as Category)}
+                      className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
+                    >
+                      {CATEGORY_OPTIONS.map((category) => (
+                        <option key={category} value={category}>{category}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => applyFieldToSimilar(item.id, 'category', item.category)}
+                      className="mt-1 text-[9px] text-indigo-500 font-bold hover:underline text-left"
+                    >
+                      Apply to similar
+                    </button>
+                  </label>
+
+                  <label className="text-[10px] font-bold text-slate-500 flex flex-col gap-1">
+                    Pattern
+                    <select
+                      value={item.patternType}
+                      onChange={(e) => updateDetectedItem(item.id, 'patternType', e.target.value as PatternType)}
+                      className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
+                    >
+                      {PATTERN_OPTIONS.map((pattern) => (
+                        <option key={pattern} value={pattern}>{pattern}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => applyFieldToSimilar(item.id, 'patternType', item.patternType)}
+                      className="mt-1 text-[9px] text-indigo-500 font-bold hover:underline text-left"
+                    >
+                      Apply to similar
+                    </button>
+                  </label>
+
+                  <label className="text-[10px] font-bold text-slate-500 flex flex-col gap-1 col-span-2">
+                    Subcategory
+                    <input
+                      value={item.subcategory}
+                      onChange={(e) => updateDetectedItem(item.id, 'subcategory', e.target.value)}
+                      className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
+                    />
+                  </label>
+
+                  <label className="text-[10px] font-bold text-slate-500 flex flex-col gap-1">
+                    Color Name
+                    <input
+                      value={item.colorName}
+                      onChange={(e) => updateDetectedItem(item.id, 'colorName', e.target.value)}
+                      className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
+                    />
+                  </label>
+
+                  <label className="text-[10px] font-bold text-slate-500 flex flex-col gap-1">
+                    Color Family
+                    <select
+                      value={item.colorFamily}
+                      onChange={(e) => updateDetectedItem(item.id, 'colorFamily', e.target.value)}
+                      className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
+                    >
+                      {COLOR_FAMILY_OPTIONS.map((family) => (
+                        <option key={family} value={family}>{family}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => applyFieldToSimilar(item.id, 'colorFamily', item.colorFamily)}
+                      className="mt-1 text-[9px] text-indigo-500 font-bold hover:underline text-left"
+                    >
+                      Apply to similar
+                    </button>
+                  </label>
+                </div>
+                )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
