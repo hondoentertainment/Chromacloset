@@ -3,6 +3,7 @@ import React, { useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
 import { WardrobeItem, ScanResult } from '../types';
 import { generateClosetIcon } from '../services/geminiService';
+import { analyzeWardrobeGaps } from '../services/stylistService';
 
 interface DashboardProps {
   items: WardrobeItem[];
@@ -28,6 +29,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [selectedVibe, setSelectedVibe] = useState(STYLE_VIBES[0]);
   const [genProgress, setGenProgress] = useState(0);
+  const [isGapLoading, setIsGapLoading] = useState(false);
+  const [gapSuggestion, setGapSuggestion] = useState<{ itemType: string; suggestedColor: string; reasoning: string; priority: 'high' | 'medium' | 'low' } | null>(null);
+  const [gapError, setGapError] = useState<string | null>(null);
 
   const stats = useMemo(() => {
     const total = items.length;
@@ -78,6 +82,26 @@ export const Dashboard: React.FC<DashboardProps> = ({
     } finally {
       clearInterval(interval);
       setIsGenerating(false);
+    }
+  };
+
+
+  const fetchGapSuggestion = async () => {
+    if (items.length === 0) return;
+
+    setIsGapLoading(true);
+    setGapError(null);
+
+    try {
+      const gaps = await analyzeWardrobeGaps(items);
+      setGapSuggestion(gaps[0] || null);
+      if (!gaps.length) {
+        setGapError('No clear gap found yet — your closet may already be well balanced.');
+      }
+    } catch (error) {
+      setGapError('Could not generate a suggestion right now. Please retry.');
+    } finally {
+      setIsGapLoading(false);
     }
   };
 
@@ -304,6 +328,44 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         <div className="lg:col-span-4 space-y-6">
+
+          <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <h3 className="text-lg font-bold text-slate-900">Suggested Next Item</h3>
+              <button
+                onClick={fetchGapSuggestion}
+                disabled={isGapLoading || items.length === 0}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
+              >
+                {isGapLoading ? 'Analyzing...' : (gapSuggestion ? 'Refresh' : 'Generate')}
+              </button>
+            </div>
+
+            {gapSuggestion ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-black uppercase ${
+                    gapSuggestion.priority === 'high'
+                      ? 'bg-rose-100 text-rose-700'
+                      : gapSuggestion.priority === 'medium'
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'bg-emerald-100 text-emerald-700'
+                  }`}>
+                    {gapSuggestion.priority} confidence
+                  </span>
+                </div>
+                <p className="text-sm font-bold text-slate-900">
+                  {gapSuggestion.suggestedColor} {gapSuggestion.itemType}
+                </p>
+                <p className="text-xs text-slate-500 leading-relaxed">{gapSuggestion.reasoning}</p>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">Get one AI recommendation to improve outfit versatility.</p>
+            )}
+
+            {gapError && <p className="text-xs text-rose-600 mt-3">{gapError}</p>}
+          </div>
+
           <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm sticky top-24">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">

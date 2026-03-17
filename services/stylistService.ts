@@ -1,6 +1,5 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
-import { WardrobeItem, OutfitRecommendation, WardrobeGap, StylePersona } from "../types";
+import { WardrobeItem, OutfitRecommendation, WardrobeGap, StylePersona, Category } from "../types";
 
 const OUTFIT_SCHEMA = {
   type: Type.OBJECT,
@@ -9,8 +8,8 @@ const OUTFIT_SCHEMA = {
     title: { type: Type.STRING },
     description: { type: Type.STRING },
     stylistTip: { type: Type.STRING, description: "Professional advice on how to wear this look." },
-    itemIds: { 
-      type: Type.ARRAY, 
+    itemIds: {
+      type: Type.ARRAY,
       items: { type: Type.STRING }
     },
     occasion: { type: Type.STRING },
@@ -19,10 +18,38 @@ const OUTFIT_SCHEMA = {
   required: ["id", "title", "description", "stylistTip", "itemIds", "occasion", "styleVibe"]
 };
 
+const normalizeOutfits = (raw: OutfitRecommendation[], items: WardrobeItem[]): OutfitRecommendation[] => {
+  const byId = new Map(items.map(i => [i.id, i]));
+  const seenSignatures = new Set<string>();
+
+  return raw
+    .map((outfit, idx) => {
+      const validItemIds = outfit.itemIds.filter(id => byId.has(id));
+      const categories = new Set(validItemIds.map(id => byId.get(id)?.category));
+
+      const hasTop = categories.has(Category.TOP);
+      const hasBottom = categories.has(Category.BOTTOM);
+      const isValidComposition = hasTop && hasBottom;
+
+      if (!isValidComposition || validItemIds.length < 2) return null;
+
+      const signature = [...validItemIds].sort().join('|');
+      if (seenSignatures.has(signature)) return null;
+      seenSignatures.add(signature);
+
+      return {
+        ...outfit,
+        id: outfit.id || `outfit-${Date.now()}-${idx}`,
+        itemIds: validItemIds,
+      };
+    })
+    .filter((o): o is OutfitRecommendation => Boolean(o));
+};
+
 // Create a new GoogleGenAI instance inside each function to ensure it always uses the most current API key from process.env.
 export const generateOutfits = async (
-  items: WardrobeItem[], 
-  occasion: string, 
+  items: WardrobeItem[],
+  occasion: string,
   persona: StylePersona,
   weather?: string
 ): Promise<OutfitRecommendation[]> => {
@@ -43,9 +70,10 @@ export const generateOutfits = async (
       model: "gemini-3-flash-preview",
       contents: {
         parts: [{
-          text: `You are a high-end fashion concierge. The user's style persona is "${persona}". 
-          Using ONLY these wardrobe items: ${JSON.stringify(itemManifest)}, curate 3 outfits for "${occasion}". 
-          ${weatherContext} 
+          text: `You are a high-end fashion concierge. The user's style persona is "${persona}".
+          Using ONLY these wardrobe items: ${JSON.stringify(itemManifest)}, curate 3 outfits for "${occasion}".
+          ${weatherContext}
+          Every outfit MUST include at least one top and one bottom.
           Return a JSON array. Each outfit must include a "stylistTip" that references color theory or styling principles.`
         }]
       },
@@ -58,7 +86,8 @@ export const generateOutfits = async (
       }
     });
 
-    return JSON.parse(response.text || "[]");
+    const parsed = JSON.parse(response.text || "[]") as OutfitRecommendation[];
+    return normalizeOutfits(parsed, items);
   } catch (error) {
     console.error("Stylist Error:", error);
     return [];
@@ -69,12 +98,12 @@ export const generateOutfits = async (
 export const createStylingChat = (items: WardrobeItem[], persona: StylePersona) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const itemManifest = items.map(i => `${i.colorName} ${i.subcategory}`).join(", ");
-  
+
   return ai.chats.create({
     model: 'gemini-3-pro-preview',
     config: {
-      systemInstruction: `You are the Chromacloset Style Concierge. The user has these items: ${itemManifest}. 
-      Their style persona is ${persona}. Help them with specific styling questions, outfit advice, and mixing colors. 
+      systemInstruction: `You are the Chromacloset Style Concierge. The user has these items: ${itemManifest}.
+      Their style persona is ${persona}. Help them with specific styling questions, outfit advice, and mixing colors.
       Be encouraging, sophisticated, and concise. Always suggest specific items from their inventory when possible.`
     }
   });

@@ -5,6 +5,7 @@ import { ScanModule } from './components/ScanModule';
 import { Dashboard } from './components/Dashboard';
 import { ColorExplorer } from './components/ColorExplorer';
 import { StylistModule } from './components/StylistModule';
+import { AnalyticsDebugPanel } from './components/AnalyticsDebugPanel';
 import { WardrobeItem, ScanResult } from './types';
 import type { ScanTelemetry } from './components/ScanModule';
 import { trackEvent } from './services/analyticsService';
@@ -188,6 +189,8 @@ const App: React.FC = () => {
       <footer className="py-12 text-center text-slate-400 text-sm">
         <p>&copy; 2026 Chromacloset Wardrobe Intelligence</p>
       </footer>
+
+      <AnalyticsDebugPanel />
     </div>
   );
 };
