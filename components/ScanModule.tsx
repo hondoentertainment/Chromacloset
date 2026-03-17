@@ -52,6 +52,27 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
     } : undefined
   });
 
+  const mapScanResultToItem = (res: any, index: number, imageUrl: string): WardrobeItem => ({
+    id: `item-${Date.now()}-${index}`,
+    category: (res.category as Category) || Category.TOP,
+    subcategory: res.subcategory || 'unknown',
+    brand: res.brand || 'Unknown',
+    imageUrl,
+    dominantColorHex: res.dominantColorHex || '#000000',
+    paletteHex: [res.dominantColorHex || '#000000'],
+    colorFamily: res.colorFamily || 'Neutral',
+    colorName: res.colorName || 'Unknown',
+    patternType: (res.patternType as PatternType) || PatternType.SOLID,
+    confidence: res.confidence || 0.8,
+    createdAt: Date.now(),
+    box: res.box_2d ? {
+      ymin: res.box_2d[0],
+      xmin: res.box_2d[1],
+      ymax: res.box_2d[2],
+      xmax: res.box_2d[3]
+    } : undefined
+  });
+
   const resizeImage = (file: File): Promise<string> => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -135,6 +156,13 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
         }])));
         setLastScanTelemetry({ source: 'upload', mode, latencyMs: Date.now() - startTs });
         setScanError(null);
+        setLastScanTelemetry({ source: 'upload', mode, latencyMs: Date.now() - startTs });
+        trackEvent('scan_completed', {
+          source: 'upload',
+          mode,
+          items_detected: items.length,
+          latency_ms: Date.now() - startTs,
+        });
       } else {
         const res = await processQRCode(base64);
         if (res) {
@@ -162,12 +190,20 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
           } });
           setLastScanTelemetry({ source: 'upload', mode, latencyMs: Date.now() - startTs });
           setScanError(null);
+          setLastScanTelemetry({ source: 'upload', mode, latencyMs: Date.now() - startTs });
+          trackEvent('scan_completed', {
+            source: 'upload',
+            mode,
+            items_detected: 1,
+            latency_ms: Date.now() - startTs,
+          });
         }
       }
     } catch (error) {
       trackEvent('scan_failed', { source: 'upload', mode, reason: 'processing_error' });
       setScanError('Upload scan failed. Try a clearer image or retry.');
       setScanErrorSource('upload');
+      alert("Processing failed. Try a clearer photo.");
     } finally {
       setIsProcessing(false);
     }
@@ -181,6 +217,9 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
       setScanErrorSource('live');
       return;
     }
+      return;
+    }
+    if (!base64) return;
     const startTs = Date.now();
     trackEvent('scan_started', { source: 'live', mode });
     
@@ -216,6 +255,13 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
           } });
           setLastScanTelemetry({ source: 'live', mode, latencyMs: Date.now() - startTs });
           setScanError(null);
+          setLastScanTelemetry({ source: 'live', mode, latencyMs: Date.now() - startTs });
+          trackEvent('scan_completed', {
+            source: 'live',
+            mode,
+            items_detected: 1,
+            latency_ms: Date.now() - startTs,
+          });
         }
       } else {
         const results = await analyzeClosetImage(base64);
@@ -235,6 +281,17 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
       trackEvent('scan_failed', { source: 'live', mode, reason: 'processing_error' });
       setScanError('Live scan failed. Ensure subject is well lit and retry.');
       setScanErrorSource('live');
+        setLastScanTelemetry({ source: 'live', mode, latencyMs: Date.now() - startTs });
+        trackEvent('scan_completed', {
+          source: 'live',
+          mode,
+          items_detected: items.length,
+          latency_ms: Date.now() - startTs,
+        });
+      }
+    } catch (error) {
+      trackEvent('scan_failed', { source: 'live', mode, reason: 'processing_error' });
+      alert("Scan failed. Ensure the item/code is well lit and centered.");
     } finally {
       setIsProcessing(false);
     }
