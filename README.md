@@ -18,3 +18,9 @@ View your app in AI Studio: https://ai.studio/apps/drive/1QM8jKwMdH1TzMK1hJ8E1H2
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+
+## Product planning
+
+- See [`PRD.md`](./PRD.md) for requirements and implementation context.
+- See [`FEATURE_ROADMAP.md`](./FEATURE_ROADMAP.md) for phased feature roadmap and next steps.

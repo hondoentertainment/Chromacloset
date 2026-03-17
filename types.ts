@@ -36,6 +36,7 @@ export interface WardrobeItem {
   patternType: PatternType;
   confidence: number;
   createdAt: number;
+  isEdited?: boolean;
   box?: BoundingBox;
 }
 
