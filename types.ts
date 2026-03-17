@@ -36,6 +36,7 @@ export interface WardrobeItem {
   patternType: PatternType;
   confidence: number;
   createdAt: number;
+  isEdited?: boolean;
   box?: BoundingBox;
 }
 
@@ -51,6 +52,7 @@ export interface OutfitRecommendation {
   dateSaved?: number;
   lastWorn?: number;
   userNotes?: string;
+  outfitFeedback?: "love" | "skip";
 }
 
 export interface WardrobeGap {

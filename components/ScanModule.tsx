@@ -2,12 +2,19 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { analyzeClosetImage, processQRCode } from '../services/geminiService';
 import { WardrobeItem, Category, PatternType, BoundingBox } from '../types';
+import { trackEvent } from '../services/analyticsService';
 
-interface ScanModuleProps {
-  onScanComplete: (items: WardrobeItem[]) => void;
+export type ScanMode = 'cloth' | 'qr';
+
+export interface ScanTelemetry {
+  source: 'upload' | 'live';
+  mode: ScanMode;
+  latencyMs: number;
 }
 
-type ScanMode = 'cloth' | 'qr';
+interface ScanModuleProps {
+  onScanComplete: (items: WardrobeItem[], telemetry?: ScanTelemetry) => void;
+}
 
 export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
   const [mode, setMode] = useState<ScanMode>('cloth');
@@ -19,6 +26,32 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const reviewContainerRef = useRef<HTMLDivElement>(null);
+  const [lastScanTelemetry, setLastScanTelemetry] = useState<ScanTelemetry | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [scanErrorSource, setScanErrorSource] = useState<'upload' | 'live' | null>(null);
+  const [baselineItems, setBaselineItems] = useState<Record<string, Partial<WardrobeItem>>>({});
+  const [showAdvancedEdits, setShowAdvancedEdits] = useState(true);
+
+  const mapScanResultToItem = (res: any, index: number, imageUrl: string): WardrobeItem => ({
+    id: `item-${Date.now()}-${index}`,
+    category: (res.category as Category) || Category.TOP,
+    subcategory: res.subcategory || 'unknown',
+    brand: res.brand || 'Unknown',
+    imageUrl,
+    dominantColorHex: res.dominantColorHex || '#000000',
+    paletteHex: [res.dominantColorHex || '#000000'],
+    colorFamily: res.colorFamily || 'Neutral',
+    colorName: res.colorName || 'Unknown',
+    patternType: (res.patternType as PatternType) || PatternType.SOLID,
+    confidence: res.confidence || 0.8,
+    createdAt: Date.now(),
+    box: res.box_2d ? {
+      ymin: res.box_2d[0],
+      xmin: res.box_2d[1],
+      ymax: res.box_2d[2],
+      xmax: res.box_2d[3]
+    } : undefined
+  });
 
   const resizeImage = (file: File): Promise<string> => {
     return new Promise((resolve) => {
@@ -83,6 +116,8 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    const startTs = Date.now();
+    trackEvent('scan_started', { source: 'upload', mode });
     setIsProcessing(true);
     try {
       const base64 = await resizeImage(file);
@@ -90,27 +125,17 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
       
       if (mode === 'cloth') {
         const results = await analyzeClosetImage(base64);
-        const items: WardrobeItem[] = results.map((res: any, index: number) => ({
-          id: `item-${Date.now()}-${index}`,
-          category: (res.category as Category) || Category.TOP,
-          subcategory: res.subcategory || 'unknown',
-          brand: res.brand || 'Unknown',
-          imageUrl: base64,
-          dominantColorHex: res.dominantColorHex || '#000000',
-          paletteHex: [res.dominantColorHex || '#000000'],
-          colorFamily: res.colorFamily || 'Neutral',
-          colorName: res.colorName || 'Unknown',
-          patternType: (res.patternType as PatternType) || PatternType.SOLID,
-          confidence: res.confidence || 0.8,
-          createdAt: Date.now(),
-          box: res.box_2d ? {
-            ymin: res.box_2d[0],
-            xmin: res.box_2d[1],
-            ymax: res.box_2d[2],
-            xmax: res.box_2d[3]
-          } : undefined
-        }));
+        const items: WardrobeItem[] = results.map((res: any, index: number) => mapScanResultToItem(res, index, base64));
         setDetectedItems(items);
+        setBaselineItems(Object.fromEntries(items.map(item => [item.id, {
+          category: item.category,
+          patternType: item.patternType,
+          subcategory: item.subcategory,
+          colorName: item.colorName,
+          colorFamily: item.colorFamily
+        }])));
+        setLastScanTelemetry({ source: 'upload', mode, latencyMs: Date.now() - startTs });
+        setScanError(null);
       } else {
         const res = await processQRCode(base64);
         if (res) {
@@ -129,10 +154,21 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
             createdAt: Date.now(),
           };
           setDetectedItems([item]);
+          setBaselineItems({ [item.id]: {
+            category: item.category,
+            patternType: item.patternType,
+            subcategory: item.subcategory,
+            colorName: item.colorName,
+            colorFamily: item.colorFamily
+          } });
+          setLastScanTelemetry({ source: 'upload', mode, latencyMs: Date.now() - startTs });
+          setScanError(null);
         }
       }
     } catch (error) {
-      alert("Processing failed. Try a clearer photo.");
+      trackEvent('scan_failed', { source: 'upload', mode, reason: 'processing_error' });
+      setScanError('Upload scan failed. Try a clearer image or retry.');
+      setScanErrorSource('upload');
     } finally {
       setIsProcessing(false);
     }
@@ -140,7 +176,14 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
 
   const handleLiveScan = async () => {
     const base64 = captureFrame();
-    if (!base64) return;
+    if (!base64) {
+      trackEvent('scan_failed', { source: 'live', mode, reason: 'capture_error' });
+      setScanError('Camera capture failed. Please retry.');
+      setScanErrorSource('live');
+      return;
+    }
+    const startTs = Date.now();
+    trackEvent('scan_started', { source: 'live', mode });
     
     setIsProcessing(true);
     setPreviewUrl(base64);
@@ -165,33 +208,34 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
             createdAt: Date.now(),
           };
           setDetectedItems([item]);
+          setBaselineItems({ [item.id]: {
+            category: item.category,
+            patternType: item.patternType,
+            subcategory: item.subcategory,
+            colorName: item.colorName,
+            colorFamily: item.colorFamily
+          } });
+          setLastScanTelemetry({ source: 'live', mode, latencyMs: Date.now() - startTs });
+          setScanError(null);
         }
       } else {
         const results = await analyzeClosetImage(base64);
-        const items: WardrobeItem[] = results.map((res: any, index: number) => ({
-          id: `item-${Date.now()}-${index}`,
-          category: (res.category as Category) || Category.TOP,
-          subcategory: res.subcategory || 'unknown',
-          brand: res.brand || 'Unknown',
-          imageUrl: base64,
-          dominantColorHex: res.dominantColorHex || '#000000',
-          paletteHex: [res.dominantColorHex || '#000000'],
-          colorFamily: res.colorFamily || 'Neutral',
-          colorName: res.colorName || 'Unknown',
-          patternType: (res.patternType as PatternType) || PatternType.SOLID,
-          confidence: res.confidence || 0.8,
-          createdAt: Date.now(),
-          box: res.box_2d ? {
-            ymin: res.box_2d[0],
-            xmin: res.box_2d[1],
-            ymax: res.box_2d[2],
-            xmax: res.box_2d[3]
-          } : undefined
-        }));
+        const items: WardrobeItem[] = results.map((res: any, index: number) => mapScanResultToItem(res, index, base64));
         setDetectedItems(items);
+        setBaselineItems(Object.fromEntries(items.map(item => [item.id, {
+          category: item.category,
+          patternType: item.patternType,
+          subcategory: item.subcategory,
+          colorName: item.colorName,
+          colorFamily: item.colorFamily
+        }])));
+        setLastScanTelemetry({ source: 'live', mode, latencyMs: Date.now() - startTs });
+        setScanError(null);
       }
     } catch (error) {
-      alert("Scan failed. Ensure the item/code is well lit and centered.");
+      trackEvent('scan_failed', { source: 'live', mode, reason: 'processing_error' });
+      setScanError('Live scan failed. Ensure subject is well lit and retry.');
+      setScanErrorSource('live');
     } finally {
       setIsProcessing(false);
     }
@@ -199,9 +243,20 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
 
   const confirmSave = () => {
     if (detectedItems) {
-      onScanComplete(detectedItems);
+      const hasInvalid = detectedItems.some(item => !item.subcategory.trim() || !item.colorName.trim());
+      if (hasInvalid) {
+        setScanError('Please provide both subcategory and color name for all items before saving.');
+        setScanErrorSource(lastScanTelemetry?.source ?? 'upload');
+        return;
+      }
+
+      onScanComplete(detectedItems, lastScanTelemetry || undefined);
       setDetectedItems(null);
       setPreviewUrl(null);
+      setLastScanTelemetry(null);
+      setBaselineItems({});
+      setScanError(null);
+      setScanErrorSource(null);
     }
   };
 
@@ -209,11 +264,104 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
     if (confirm("Discard this scan?")) {
       setDetectedItems(null);
       setPreviewUrl(null);
+      setLastScanTelemetry(null);
+      setBaselineItems({});
+      setScanError(null);
+      setScanErrorSource(null);
     }
   };
 
   const deleteSingleItem = (id: string) => {
     setDetectedItems(prev => prev ? prev.filter(i => i.id !== id) : null);
+  };
+
+
+  const updateDetectedItem = <K extends keyof WardrobeItem>(id: string, field: K, value: WardrobeItem[K]) => {
+    if (!['category', 'patternType', 'subcategory', 'colorName', 'colorFamily'].includes(String(field))) {
+      return;
+    }
+
+    setDetectedItems(prev => prev ? prev.map(item => {
+      if (item.id !== id) return item;
+      const next = { ...item, [field]: value } as WardrobeItem;
+      const baseline = baselineItems[id];
+      const isEdited = baseline ? (
+        next.category !== baseline.category ||
+        next.patternType !== baseline.patternType ||
+        next.subcategory !== baseline.subcategory ||
+        next.colorName !== baseline.colorName ||
+        next.colorFamily !== baseline.colorFamily
+      ) : true;
+
+      trackEvent('scan_item_edited', {
+        item_id: id,
+        fields: [field as 'category' | 'patternType' | 'subcategory' | 'colorName' | 'colorFamily']
+      });
+
+      return { ...next, isEdited };
+    }) : prev);
+  };
+
+
+  const applyFieldToSimilar = <K extends keyof WardrobeItem>(id: string, field: K, value: WardrobeItem[K]) => {
+    if (!detectedItems || !['category', 'patternType', 'colorFamily'].includes(String(field))) return;
+    const source = detectedItems.find(i => i.id === id);
+    if (!source) return;
+
+    const similarIds = detectedItems
+      .filter(i => i.id !== id && i.subcategory.toLowerCase() === source.subcategory.toLowerCase())
+      .map(i => i.id);
+
+    if (!similarIds.length) return;
+
+    setDetectedItems(prev => prev ? prev.map(item => {
+      if (!similarIds.includes(item.id)) return item;
+      const next = { ...item, [field]: value } as WardrobeItem;
+      const baseline = baselineItems[item.id];
+      const isEdited = baseline ? (
+        next.category !== baseline.category ||
+        next.patternType !== baseline.patternType ||
+        next.subcategory !== baseline.subcategory ||
+        next.colorName !== baseline.colorName ||
+        next.colorFamily !== baseline.colorFamily
+      ) : true;
+      return { ...next, isEdited };
+    }) : prev);
+
+    trackEvent('scan_item_edited', {
+      item_id: id,
+      fields: [field as 'category' | 'patternType' | 'colorFamily']
+    });
+  };
+
+  const CATEGORY_OPTIONS = Object.values(Category);
+  const PATTERN_OPTIONS = Object.values(PatternType);
+  const COLOR_FAMILY_OPTIONS = ['Neutral', 'Black', 'White', 'Gray', 'Blue', 'Green', 'Red', 'Pink', 'Purple', 'Yellow', 'Orange', 'Brown'];
+
+  const resetItemToBaseline = (id: string) => {
+    const baseline = baselineItems[id];
+    if (!baseline) return;
+
+    setDetectedItems(prev => prev ? prev.map(item => item.id === id
+      ? {
+          ...item,
+          category: (baseline.category as Category) || item.category,
+          patternType: (baseline.patternType as PatternType) || item.patternType,
+          subcategory: (baseline.subcategory as string) || item.subcategory,
+          colorName: (baseline.colorName as string) || item.colorName,
+          colorFamily: (baseline.colorFamily as string) || item.colorFamily,
+          isEdited: false
+        }
+      : item) : prev);
+  };
+
+  const triggerRetry = () => {
+    setScanError(null);
+    if (scanErrorSource === 'live' && mode === 'qr') {
+      startCamera();
+      return;
+    }
+    fileInputRef.current?.click();
   };
 
   if (detectedItems) {
@@ -231,6 +379,14 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
             <button onClick={discardScan} className="flex-1 md:flex-none px-6 py-3 border border-slate-200 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-50">
               Discard All
             </button>
+
+            <button
+              onClick={() => setShowAdvancedEdits(v => !v)}
+              className="flex-1 md:flex-none px-6 py-3 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50"
+            >
+              {showAdvancedEdits ? 'Hide Edit Controls' : 'Show Edit Controls'}
+            </button>
+
             <button onClick={confirmSave} className="flex-1 md:flex-none px-10 py-3 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-100 hover:bg-indigo-700">
               Add {detectedItems.length} to Closet
             </button>
@@ -288,33 +444,123 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
                 key={item.id} 
                 onMouseEnter={() => setHoveredItemId(item.id)}
                 onMouseLeave={() => setHoveredItemId(null)}
-                className={`bg-white rounded-2xl p-4 border transition-all flex items-center gap-4 group ${hoveredItemId === item.id ? 'border-indigo-600 shadow-indigo-50 shadow-lg ring-1 ring-indigo-600' : 'border-slate-100 shadow-sm'}`}
+                className={`bg-white rounded-2xl p-4 border transition-all group ${hoveredItemId === item.id ? 'border-indigo-600 shadow-indigo-50 shadow-lg ring-1 ring-indigo-600' : 'border-slate-100 shadow-sm'}`}
               >
-                <div className="w-16 h-16 rounded-xl overflow-hidden bg-slate-100 flex-shrink-0 border border-slate-50 relative">
-                  <div className="w-full h-full" style={{ backgroundColor: item.dominantColorHex }} />
-                  {item.confidence > 0.9 && (
-                    <div className="absolute top-1 right-1 bg-white/90 rounded-full p-0.5">
-                      <svg className="w-3 h-3 text-indigo-600" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
+                <div className="flex items-center gap-4 mb-4">
+                  <div className="w-16 h-16 rounded-xl overflow-hidden bg-slate-100 flex-shrink-0 border border-slate-50 relative">
+                    <div className="w-full h-full" style={{ backgroundColor: item.dominantColorHex }} />
+                    {item.confidence > 0.9 && (
+                      <div className="absolute top-1 right-1 bg-white/90 rounded-full p-0.5">
+                        <svg className="w-3 h-3 text-indigo-600" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest leading-none mb-1">{item.category}</p>
+                    <h4 className="font-bold text-slate-900 truncate capitalize">{item.colorName} {item.subcategory}</h4>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{item.brand}</span>
+                      {item.isEdited && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold">Edited</span>}
                     </div>
-                  )}
+                  </div>
+
+                  <div className="flex flex-col items-end gap-1">
+                  <button
+                    onClick={() => resetItemToBaseline(item.id)}
+                    className="text-[9px] text-indigo-500 font-bold hover:underline"
+                    title="Reset edits"
+                  >
+                    Reset
+                  </button>
+                  <button 
+                    onClick={() => deleteSingleItem(item.id)}
+                    className="p-1 text-slate-300 hover:text-red-500 transition-colors"
+                    title="Remove item"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  </button>
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest leading-none mb-1">{item.category}</p>
-                      <h4 className="font-bold text-slate-900 truncate capitalize">{item.colorName} {item.subcategory}</h4>
-                    </div>
-                    <button 
-                      onClick={() => deleteSingleItem(item.id)}
-                      className="p-1 text-slate-300 hover:text-red-500 transition-colors"
+
+                {showAdvancedEdits && (
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-[10px] font-bold text-slate-500 flex flex-col gap-1">
+                    Category
+                    <select
+                      value={item.category}
+                      onChange={(e) => updateDetectedItem(item.id, 'category', e.target.value as Category)}
+                      className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
                     >
-                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                      {CATEGORY_OPTIONS.map((category) => (
+                        <option key={category} value={category}>{category}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => applyFieldToSimilar(item.id, 'category', item.category)}
+                      className="mt-1 text-[9px] text-indigo-500 font-bold hover:underline text-left"
+                    >
+                      Apply to similar
                     </button>
-                  </div>
-                  <div className="flex items-center gap-2 mt-2">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{item.brand} • {item.patternType}</span>
-                  </div>
+                  </label>
+
+                  <label className="text-[10px] font-bold text-slate-500 flex flex-col gap-1">
+                    Pattern
+                    <select
+                      value={item.patternType}
+                      onChange={(e) => updateDetectedItem(item.id, 'patternType', e.target.value as PatternType)}
+                      className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
+                    >
+                      {PATTERN_OPTIONS.map((pattern) => (
+                        <option key={pattern} value={pattern}>{pattern}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => applyFieldToSimilar(item.id, 'patternType', item.patternType)}
+                      className="mt-1 text-[9px] text-indigo-500 font-bold hover:underline text-left"
+                    >
+                      Apply to similar
+                    </button>
+                  </label>
+
+                  <label className="text-[10px] font-bold text-slate-500 flex flex-col gap-1 col-span-2">
+                    Subcategory
+                    <input
+                      value={item.subcategory}
+                      onChange={(e) => updateDetectedItem(item.id, 'subcategory', e.target.value)}
+                      className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
+                    />
+                  </label>
+
+                  <label className="text-[10px] font-bold text-slate-500 flex flex-col gap-1">
+                    Color Name
+                    <input
+                      value={item.colorName}
+                      onChange={(e) => updateDetectedItem(item.id, 'colorName', e.target.value)}
+                      className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
+                    />
+                  </label>
+
+                  <label className="text-[10px] font-bold text-slate-500 flex flex-col gap-1">
+                    Color Family
+                    <select
+                      value={item.colorFamily}
+                      onChange={(e) => updateDetectedItem(item.id, 'colorFamily', e.target.value)}
+                      className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
+                    >
+                      {COLOR_FAMILY_OPTIONS.map((family) => (
+                        <option key={family} value={family}>{family}</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => applyFieldToSimilar(item.id, 'colorFamily', item.colorFamily)}
+                      className="mt-1 text-[9px] text-indigo-500 font-bold hover:underline text-left"
+                    >
+                      Apply to similar
+                    </button>
+                  </label>
                 </div>
+                )}
               </div>
             ))}
             {detectedItems.length === 0 && (
@@ -366,6 +612,16 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
           </p>
         </div>
 
+
+        {scanError && (
+          <div className="mb-4 px-4 py-3 rounded-xl border border-rose-200 bg-rose-50 text-left">
+            <p className="text-sm text-rose-700 font-semibold">{scanError}</p>
+            <button onClick={triggerRetry} className="mt-2 px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-bold hover:bg-rose-700">
+              Retry
+            </button>
+          </div>
+        )}
+
         {isProcessing ? (
           <div className="space-y-6">
             <div className="relative h-64 bg-slate-50 rounded-3xl overflow-hidden border border-slate-100">
@@ -402,8 +658,8 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
                    >
                      Capture & Parse Code
                    </button>
+                  </div>
                 </div>
-              </div>
             )}
 
             <div className="grid grid-cols-1 gap-3">
