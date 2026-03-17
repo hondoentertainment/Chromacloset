@@ -53,6 +53,27 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
     } : undefined
   });
 
+  const mapScanResultToItem = (res: any, index: number, imageUrl: string): WardrobeItem => ({
+    id: `item-${Date.now()}-${index}`,
+    category: (res.category as Category) || Category.TOP,
+    subcategory: res.subcategory || 'unknown',
+    brand: res.brand || 'Unknown',
+    imageUrl,
+    dominantColorHex: res.dominantColorHex || '#000000',
+    paletteHex: [res.dominantColorHex || '#000000'],
+    colorFamily: res.colorFamily || 'Neutral',
+    colorName: res.colorName || 'Unknown',
+    patternType: (res.patternType as PatternType) || PatternType.SOLID,
+    confidence: res.confidence || 0.8,
+    createdAt: Date.now(),
+    box: res.box_2d ? {
+      ymin: res.box_2d[0],
+      xmin: res.box_2d[1],
+      ymax: res.box_2d[2],
+      xmax: res.box_2d[3]
+    } : undefined
+  });
+
   const resizeImage = (file: File): Promise<string> => {
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -136,6 +157,13 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
         }])));
         setLastScanTelemetry({ source: 'upload', mode, latencyMs: Date.now() - startTs });
         setScanError(null);
+        setLastScanTelemetry({ source: 'upload', mode, latencyMs: Date.now() - startTs });
+        trackEvent('scan_completed', {
+          source: 'upload',
+          mode,
+          items_detected: items.length,
+          latency_ms: Date.now() - startTs,
+        });
       } else {
         const res = await processQRCode(base64);
         if (res) {
@@ -163,12 +191,20 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
           } });
           setLastScanTelemetry({ source: 'upload', mode, latencyMs: Date.now() - startTs });
           setScanError(null);
+          setLastScanTelemetry({ source: 'upload', mode, latencyMs: Date.now() - startTs });
+          trackEvent('scan_completed', {
+            source: 'upload',
+            mode,
+            items_detected: 1,
+            latency_ms: Date.now() - startTs,
+          });
         }
       }
     } catch (error) {
       trackEvent('scan_failed', { source: 'upload', mode, reason: 'processing_error' });
       setScanError('Upload scan failed. Try a clearer image or retry.');
       setScanErrorSource('upload');
+      alert("Processing failed. Try a clearer photo.");
     } finally {
       setIsProcessing(false);
     }
@@ -182,6 +218,9 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
       setScanErrorSource('live');
       return;
     }
+      return;
+    }
+    if (!base64) return;
     const startTs = Date.now();
     trackEvent('scan_started', { source: 'live', mode });
     
@@ -217,6 +256,13 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
           } });
           setLastScanTelemetry({ source: 'live', mode, latencyMs: Date.now() - startTs });
           setScanError(null);
+          setLastScanTelemetry({ source: 'live', mode, latencyMs: Date.now() - startTs });
+          trackEvent('scan_completed', {
+            source: 'live',
+            mode,
+            items_detected: 1,
+            latency_ms: Date.now() - startTs,
+          });
         }
       } else {
         const results = await analyzeClosetImage(base64);
@@ -236,6 +282,22 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
       trackEvent('scan_failed', { source: 'live', mode, reason: 'processing_error' });
       setScanError('Live scan failed. Ensure subject is well lit and retry.');
       setScanErrorSource('live');
+      }
+    } catch (error) {
+      trackEvent('scan_failed', { source: 'live', mode, reason: 'processing_error' });
+      setScanError('Live scan failed. Ensure subject is well lit and retry.');
+      setScanErrorSource('live');
+        setLastScanTelemetry({ source: 'live', mode, latencyMs: Date.now() - startTs });
+        trackEvent('scan_completed', {
+          source: 'live',
+          mode,
+          items_detected: items.length,
+          latency_ms: Date.now() - startTs,
+        });
+      }
+    } catch (error) {
+      trackEvent('scan_failed', { source: 'live', mode, reason: 'processing_error' });
+      alert("Scan failed. Ensure the item/code is well lit and centered.");
     } finally {
       setIsProcessing(false);
     }
@@ -254,6 +316,9 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
       setDetectedItems(null);
       setPreviewUrl(null);
       setLastScanTelemetry(null);
+      setBaselineItems({});
+      setScanError(null);
+      setScanErrorSource(null);
       setBaselineItems({});
       setScanError(null);
       setScanErrorSource(null);
@@ -561,6 +626,66 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
                   </label>
                 </div>
                 )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-[10px] font-bold text-slate-500 flex flex-col gap-1">
+                    Category
+                    <select
+                      value={item.category}
+                      onChange={(e) => updateDetectedItem(item.id, 'category', e.target.value as Category)}
+                      className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
+                    >
+                      {CATEGORY_OPTIONS.map((category) => (
+                        <option key={category} value={category}>{category}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="text-[10px] font-bold text-slate-500 flex flex-col gap-1">
+                    Pattern
+                    <select
+                      value={item.patternType}
+                      onChange={(e) => updateDetectedItem(item.id, 'patternType', e.target.value as PatternType)}
+                      className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
+                    >
+                      {PATTERN_OPTIONS.map((pattern) => (
+                        <option key={pattern} value={pattern}>{pattern}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="text-[10px] font-bold text-slate-500 flex flex-col gap-1 col-span-2">
+                    Subcategory
+                    <input
+                      value={item.subcategory}
+                      onChange={(e) => updateDetectedItem(item.id, 'subcategory', e.target.value)}
+                      className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
+                    />
+                  </label>
+
+                  <label className="text-[10px] font-bold text-slate-500 flex flex-col gap-1">
+                    Color Name
+                    <input
+                      value={item.colorName}
+                      onChange={(e) => updateDetectedItem(item.id, 'colorName', e.target.value)}
+                      className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
+                    />
+                  </label>
+
+                  <label className="text-[10px] font-bold text-slate-500 flex flex-col gap-1">
+                    Color Family
+                    <select
+                      value={item.colorFamily}
+                      onChange={(e) => updateDetectedItem(item.id, 'colorFamily', e.target.value)}
+                      className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
+                    >
+                      {COLOR_FAMILY_OPTIONS.map((family) => (
+                        <option key={family} value={family}>{family}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
               </div>
             ))}
             {detectedItems.length === 0 && (
