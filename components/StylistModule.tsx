@@ -188,6 +188,21 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
   const [searchResult, setSearchResult] = useState<{ text: string, sources: any[] } | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
+  const [chatError, setChatError] = useState<string | null>(null);
+  const [loadingHint, setLoadingHint] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!loading) {
+      setLoadingHint(null);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setLoadingHint('Still curating looks — Gemini is taking longer than usual. You can keep waiting or retry.');
+    }, 6000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [loading]);
 
   useEffect(() => {
     localStorage.setItem('chromacloset_saved_outfits', JSON.stringify(savedOutfits));
@@ -211,12 +226,18 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userInput.trim() || isSending) return;
+    if (!chatSessionRef.current) {
+      trackEvent('chat_failed', { reason: 'session_unavailable', persona });
+      setChatError('The style consultant is not ready yet. Close and reopen chat to retry.');
+      return;
+    }
 
     const userMsg: ChatMessage = { role: 'user', text: userInput };
     trackEvent('stylist_chat_message_sent', { persona, message_length: userInput.trim().length });
     setChatMessages(prev => [...prev, userMsg]);
     setUserInput('');
     setIsSending(true);
+    setChatError(null);
 
     try {
       const result = await chatSessionRef.current.sendMessage({ message: userInput });
@@ -224,6 +245,7 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
       setChatMessages(prev => [...prev, modelMsg]);
     } catch (err) {
       trackEvent('chat_failed', { reason: 'send_error', persona });
+      setChatError('Message failed to send. Please retry in a moment.');
       console.error(err);
     } finally {
       setIsSending(false);
@@ -231,6 +253,12 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
   };
 
   const handleGenerate = async () => {
+    if (items.length < 2) {
+      trackEvent('outfits_generation_failed', { reason: 'insufficient_inventory', persona, occasion });
+      setGenerationError('Add at least one top and one bottom before generating outfits.');
+      return;
+    }
+
     setLoading(true);
     setGenerationError(null);
     trackEvent('outfits_requested', {
@@ -240,15 +268,30 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
       inventory_size: items.length,
     });
     try {
-      const result = await generateOutfits(items, occasion, persona, weather || undefined);
+      const result = await Promise.race([
+        generateOutfits(items, occasion, persona, weather || undefined),
+        new Promise<never>((_, reject) => {
+          window.setTimeout(() => reject(new Error('timeout')), 15000);
+        })
+      ]);
+
+      if (!result.length) {
+        trackEvent('outfits_generation_failed', { reason: 'empty_result', persona, occasion });
+        setGenerationError('We could not build a complete look from the current inventory. Try a new occasion or add more staples.');
+        return;
+      }
+
       setOutfits(result);
       trackEvent('outfits_generated', { count: result.length });
       setGenerationError(null);
     } catch (error) {
-      trackEvent('outfits_generation_failed', { reason: 'service_error', persona, occasion });
-      setGenerationError('We could not generate outfits right now. Please retry.');
-    } catch (error) {
-      trackEvent('outfits_generation_failed', { reason: 'service_error', persona, occasion });
+      const reason = error instanceof Error && error.message === 'timeout' ? 'timeout' : 'service_error';
+      trackEvent('outfits_generation_failed', { reason, persona, occasion });
+      setGenerationError(
+        reason === 'timeout'
+          ? 'Outfit generation timed out. Retry now or simplify the request.'
+          : 'We could not generate outfits right now. Please retry.'
+      );
       showToast("Style engine is warming up.");
     } finally {
       setLoading(false);
@@ -294,6 +337,35 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
 
   return (
     <div className="py-12 max-w-6xl mx-auto space-y-12 px-4 animate-in fade-in duration-700 relative">
+      <section className="rounded-[2.5rem] border border-white/10 bg-white/5 backdrop-blur-2xl p-8 md:p-10 shadow-[0_24px_90px_rgba(15,23,42,0.28)]">
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8">
+          <div className="space-y-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-fuchsia-400/20 bg-fuchsia-400/10 px-4 py-1.5 text-xs font-black uppercase tracking-[0.24em] text-fuchsia-200">
+              Style Concierge Experience
+            </div>
+            <div>
+              <h1 className="text-3xl md:text-4xl font-black tracking-tight text-white">Editorial-grade outfit curation with live AI assistance.</h1>
+              <p className="mt-3 max-w-2xl text-slate-300 leading-relaxed">
+                Build looks with weather context, save high-performing combinations, and refine your aesthetic with a premium recommendation workspace inspired by modern luxury retail tooling.
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: 'Inventory ready', value: items.length },
+              { label: 'Saved looks', value: savedOutfits.length },
+              { label: 'Persona', value: persona },
+              { label: 'Occasion', value: occasion },
+            ].map((card) => (
+              <div key={card.label} className="rounded-2xl border border-white/10 bg-slate-900/50 px-4 py-3">
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{card.label}</p>
+                <p className="mt-2 text-lg font-black text-white">{card.value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Toast Notification */}
       {toast && (
         <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] bg-slate-900 text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-bottom-10">
@@ -358,6 +430,11 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
               </div>
             ))}
             {isSending && <div className="text-xs text-slate-400 animate-pulse">Consultant is thinking...</div>}
+            {chatError && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
+                {chatError}
+              </div>
+            )}
             <div ref={scrollRef} />
           </div>
           <form onSubmit={handleSendMessage} className="p-4 border-t border-slate-100 flex gap-2">
@@ -436,6 +513,16 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
                 </div>
               </div>
 
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Weather Context</label>
+                <input
+                  value={weather || ''}
+                  onChange={(e) => setWeather(e.target.value || null)}
+                  placeholder="Optional: cool rain, warm sun, breezy evening..."
+                  className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
               <button
                 onClick={handleGenerate}
                 disabled={loading || items.length < 2}
@@ -454,6 +541,12 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
                   >
                     Retry generation
                   </button>
+                </div>
+              )}
+
+              {loadingHint && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                  <p className="text-xs text-amber-700 font-semibold">{loadingHint}</p>
                 </div>
               )}
             </div>
@@ -520,7 +613,7 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
               </div>
             ) : (
               <div className="h-96 border-2 border-dashed border-slate-200 rounded-[2.5rem] flex flex-col items-center justify-center text-center p-8">
-                 <p className="text-slate-400 max-w-xs">Select your persona and occasion to receive tailored styling advice.</p>
+                 <p className="text-slate-400 max-w-xs">Select your persona, occasion, and optional weather context to receive tailored styling advice.</p>
               </div>
             )}
           </div>
