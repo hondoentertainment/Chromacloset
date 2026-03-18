@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { clearTrackedEvents, getTrackedEvents } from '../services/analyticsService';
+import { clearTrackedEvents, exportTrackedEvents, getTrackedEvents } from '../services/analyticsService';
 
 const MAX_SHOWN = 50;
 
@@ -20,6 +20,18 @@ export const AnalyticsDebugPanel: React.FC = () => {
     const names = Array.from(new Set(getTrackedEvents().map(e => e.name)));
     return names.sort();
   }, [refreshTick]);
+
+  const handleExport = async (format: 'json' | 'csv') => {
+    const content = exportTrackedEvents(format);
+    if (!content) return;
+
+    try {
+      await navigator.clipboard.writeText(content);
+      setRefreshTick((t) => t + 1);
+    } catch (error) {
+      console.warn('Unable to copy analytics export', error);
+    }
+  };
 
   if (!import.meta.env.DEV) {
     return null;
@@ -67,6 +79,18 @@ export const AnalyticsDebugPanel: React.FC = () => {
               className="text-xs px-2 py-1 rounded-md bg-rose-700 hover:bg-rose-600"
             >
               Clear
+            </button>
+            <button
+              onClick={() => handleExport('json')}
+              className="text-xs px-2 py-1 rounded-md bg-slate-800 hover:bg-slate-700"
+            >
+              Copy JSON
+            </button>
+            <button
+              onClick={() => handleExport('csv')}
+              className="text-xs px-2 py-1 rounded-md bg-slate-800 hover:bg-slate-700"
+            >
+              Copy CSV
             </button>
           </div>
 

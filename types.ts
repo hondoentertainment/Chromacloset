@@ -48,6 +48,8 @@ export interface OutfitRecommendation {
   itemIds: string[];
   occasion: string;
   styleVibe: string;
+  weatherFocus?: 'warm' | 'cold' | 'mild' | 'rain';
+  score?: number;
   isSaved?: boolean;
   dateSaved?: number;
   lastWorn?: number;
