@@ -11,7 +11,7 @@ export type AnalyticsEventPayloadMap = {
   scan_failed: {
     source: 'upload' | 'live';
     mode: 'cloth' | 'qr';
-    reason: 'processing_error' | 'capture_error';
+    reason: 'processing_error' | 'capture_error' | 'empty_result' | 'validation_error';
   };
   scan_item_edited: {
     item_id: string;
@@ -26,13 +26,17 @@ export type AnalyticsEventPayloadMap = {
     inventory_size: number;
   };
   outfits_generated: { count: number };
-  outfits_generation_failed: { reason: 'service_error'; persona: string; occasion: string };
+  outfits_generation_failed: {
+    reason: 'service_error' | 'empty_result' | 'insufficient_inventory' | 'timeout';
+    persona: string;
+    occasion: string;
+  };
   outfit_saved: { outfit_id: string };
   outfit_unsaved: { outfit_id: string };
   outfit_feedback_given: { outfit_id: string; feedback: 'love' | 'skip'; source: 'curator' | 'lookbook' };
   stylist_chat_opened: { persona: string };
   stylist_chat_message_sent: { persona: string; message_length: number };
-  chat_failed: { reason: 'send_error'; persona: string };
+  chat_failed: { reason: 'send_error' | 'session_unavailable'; persona: string };
   dashboard_gap_suggestion_requested: { inventory_size: number };
   dashboard_gap_suggestion_generated: {
     item_type: string;
@@ -92,6 +96,23 @@ export const getTrackedEvents = (): AnalyticsEvent[] => {
   } catch {
     return [];
   }
+};
+
+export const exportTrackedEvents = (format: 'json' | 'csv' = 'json'): string => {
+  const events = getTrackedEvents();
+
+  if (format === 'json') {
+    return JSON.stringify(events, null, 2);
+  }
+
+  const headers = ['timestamp', 'name', 'schema_version', 'payload'];
+  const rows = events.map((event) => {
+    const schemaVersion = event.payload?.schema_version ?? '';
+    const payload = JSON.stringify(event.payload).replace(/"/g, '""');
+    return `"${event.timestamp}","${event.name}","${schemaVersion}","${payload}"`;
+  });
+
+  return [headers.join(','), ...rows].join('\n');
 };
 
 export const clearTrackedEvents = () => {
