@@ -280,6 +280,7 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
     try {
       const result = await Promise.race([
         generateOutfits(items, occasion, persona, weather || undefined, agentMode),
+        generateOutfits(items, occasion, persona, weather || undefined),
         new Promise<never>((_, reject) => {
           window.setTimeout(() => reject(new Error('timeout')), 15000);
         })
@@ -366,6 +367,7 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
               { label: 'Saved looks', value: savedOutfits.length },
               { label: 'Persona', value: persona },
               { label: 'Agent mode', value: agentMode },
+              { label: 'Occasion', value: occasion },
             ].map((card) => (
               <div key={card.label} className="rounded-2xl border border-white/10 bg-slate-900/50 px-4 py-3">
                 <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{card.label}</p>
