@@ -75,3 +75,4 @@ export interface ChatMessage {
 }
 
 export type StylePersona = 'Minimalist' | 'Streetwear' | 'Classic Professional' | 'Bohemian' | 'Quiet Luxury' | 'Bold & Eclectic';
+export type AgentMode = 'Precision' | 'Balanced' | 'Editorial';

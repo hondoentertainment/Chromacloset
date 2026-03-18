@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { generateOutfits, analyzeWardrobeGaps, searchForGapItems, createStylingChat } from '../services/stylistService';
-import { WardrobeItem, OutfitRecommendation, WardrobeGap, StylePersona, ChatMessage } from '../types';
+import { WardrobeItem, OutfitRecommendation, WardrobeGap, StylePersona, ChatMessage, AgentMode } from '../types';
 import { trackEvent } from '../services/analyticsService';
 
 interface StylistModuleProps {
@@ -9,6 +9,11 @@ interface StylistModuleProps {
 }
 
 const PERSONAS: StylePersona[] = ['Minimalist', 'Streetwear', 'Classic Professional', 'Bohemian', 'Quiet Luxury', 'Bold & Eclectic'];
+const AGENT_MODES: Array<{ mode: AgentMode; title: string; desc: string }> = [
+  { mode: 'Precision', title: 'Precision Agent', desc: 'Optimizes for practicality, compatibility, and low-risk outfit confidence.' },
+  { mode: 'Balanced', title: 'Balanced Agent', desc: 'Blends polish, versatility, and tasteful creativity for everyday performance.' },
+  { mode: 'Editorial', title: 'Editorial Agent', desc: 'Pushes stronger contrasts, bolder layering, and more fashion-forward looks.' },
+];
 
 // Props interface for OutfitCard component.
 interface OutfitCardProps {
@@ -165,6 +170,7 @@ const OutfitCard: React.FC<OutfitCardProps> = ({
 export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
   const [occasion, setOccasion] = useState('Casual Weekend');
   const [persona, setPersona] = useState<StylePersona>('Minimalist');
+  const [agentMode, setAgentMode] = useState<AgentMode>('Balanced');
   const [outfits, setOutfits] = useState<OutfitRecommendation[]>([]);
   const [savedOutfits, setSavedOutfits] = useState<OutfitRecommendation[]>(() => {
     const saved = localStorage.getItem('chromacloset_saved_outfits');
@@ -210,9 +216,13 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
 
   useEffect(() => {
     if (isChatOpen && !chatSessionRef.current) {
-      chatSessionRef.current = createStylingChat(items, persona);
+      chatSessionRef.current = createStylingChat(items, persona, agentMode);
     }
-  }, [isChatOpen, items, persona]);
+  }, [isChatOpen, items, persona, agentMode]);
+
+  useEffect(() => {
+    chatSessionRef.current = null;
+  }, [persona, agentMode, items]);
 
   useEffect(() => {
     scrollRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -269,6 +279,7 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
     });
     try {
       const result = await Promise.race([
+        generateOutfits(items, occasion, persona, weather || undefined, agentMode),
         generateOutfits(items, occasion, persona, weather || undefined),
         new Promise<never>((_, reject) => {
           window.setTimeout(() => reject(new Error('timeout')), 15000);
@@ -355,6 +366,7 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
               { label: 'Inventory ready', value: items.length },
               { label: 'Saved looks', value: savedOutfits.length },
               { label: 'Persona', value: persona },
+              { label: 'Agent mode', value: agentMode },
               { label: 'Occasion', value: occasion },
             ].map((card) => (
               <div key={card.label} className="rounded-2xl border border-white/10 bg-slate-900/50 px-4 py-3">
@@ -497,6 +509,33 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
               </div>
 
               <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Styling Agent</label>
+                <div className="grid grid-cols-1 gap-3">
+                  {AGENT_MODES.map((agent) => (
+                    <button
+                      key={agent.mode}
+                      onClick={() => setAgentMode(agent.mode)}
+                      className={`rounded-2xl border p-4 text-left transition-all ${
+                        agentMode === agent.mode
+                          ? 'border-fuchsia-300 bg-fuchsia-50 shadow-sm'
+                          : 'border-slate-100 bg-white hover:border-fuchsia-200'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className={`text-sm font-bold ${agentMode === agent.mode ? 'text-fuchsia-900' : 'text-slate-900'}`}>{agent.title}</p>
+                          <p className="text-xs text-slate-500 mt-1 leading-relaxed">{agent.desc}</p>
+                        </div>
+                        {agentMode === agent.mode && (
+                          <span className="h-3 w-3 rounded-full bg-fuchsia-500 shadow-[0_0_16px_rgba(217,70,239,0.45)]" />
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Occasion</label>
                 <div className="grid grid-cols-1 gap-2">
                   {["Casual Weekend", "Business Meeting", "Date Night", "Travel Ready"].map(o => (
@@ -521,6 +560,14 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
                   placeholder="Optional: cool rain, warm sun, breezy evening..."
                   className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
+              </div>
+
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Agent brief</p>
+                <p className="mt-2 text-sm font-semibold text-slate-900">{agentMode} mode • {persona}</p>
+                <p className="mt-2 text-xs leading-relaxed text-slate-500">
+                  {AGENT_MODES.find((agent) => agent.mode === agentMode)?.desc}
+                </p>
               </div>
 
               <button

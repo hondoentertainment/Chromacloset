@@ -25,3 +25,4 @@ View your app in AI Studio: https://ai.studio/apps/drive/1QM8jKwMdH1TzMK1hJ8E1H2
 - See [`PRD.md`](./PRD.md) for requirements and implementation context.
 - See [`FEATURE_ROADMAP.md`](./FEATURE_ROADMAP.md) for phased feature roadmap and next steps.
 - See [`QA_SMOKE_CHECKLIST.md`](./QA_SMOKE_CHECKLIST.md) for release smoke validation and analytics checks.
+- See [`VC_DEFENSIBILITY.md`](./VC_DEFENSIBILITY.md) for competitive review and defensibility strategy.

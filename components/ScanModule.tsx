@@ -638,6 +638,20 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
         <p className="mt-3 text-sm leading-relaxed text-slate-300">
           Move from closet scan to polished review with spatial overlays, inline corrections, and confidence-aware prompts designed to feel more like a luxury tool than a utility form.
         </p>
+
+        <div className="mt-6 grid md:grid-cols-3 gap-3 text-left">
+          {[
+            { label: 'Agent 1', title: 'Detection', desc: 'Finds garment regions and isolates likely wardrobe shapes.' },
+            { label: 'Agent 2', title: 'Classification', desc: 'Assigns category, pattern, and color naming with editable outputs.' },
+            { label: 'Agent 3', title: 'Review', desc: 'Lets you validate or override AI judgment before anything is saved.' },
+          ].map((agent) => (
+            <div key={agent.label} className="rounded-2xl border border-white/10 bg-slate-900/50 px-4 py-3">
+              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{agent.label}</p>
+              <p className="mt-2 text-sm font-bold text-white">{agent.title}</p>
+              <p className="mt-1 text-xs leading-relaxed text-slate-400">{agent.desc}</p>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="flex bg-slate-100 p-1 rounded-2xl w-fit mx-auto shadow-sm">
