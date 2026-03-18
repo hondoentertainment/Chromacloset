@@ -31,27 +31,7 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
   const [scanErrorSource, setScanErrorSource] = useState<'upload' | 'live' | null>(null);
   const [baselineItems, setBaselineItems] = useState<Record<string, Partial<WardrobeItem>>>({});
   const [showAdvancedEdits, setShowAdvancedEdits] = useState(true);
-
-  const mapScanResultToItem = (res: any, index: number, imageUrl: string): WardrobeItem => ({
-    id: `item-${Date.now()}-${index}`,
-    category: (res.category as Category) || Category.TOP,
-    subcategory: res.subcategory || 'unknown',
-    brand: res.brand || 'Unknown',
-    imageUrl,
-    dominantColorHex: res.dominantColorHex || '#000000',
-    paletteHex: [res.dominantColorHex || '#000000'],
-    colorFamily: res.colorFamily || 'Neutral',
-    colorName: res.colorName || 'Unknown',
-    patternType: (res.patternType as PatternType) || PatternType.SOLID,
-    confidence: res.confidence || 0.8,
-    createdAt: Date.now(),
-    box: res.box_2d ? {
-      ymin: res.box_2d[0],
-      xmin: res.box_2d[1],
-      ymax: res.box_2d[2],
-      xmax: res.box_2d[3]
-    } : undefined
-  });
+  const [processingHint, setProcessingHint] = useState<string | null>(null);
 
   const mapScanResultToItem = (res: any, index: number, imageUrl: string): WardrobeItem => ({
     id: `item-${Date.now()}-${index}`,
@@ -100,6 +80,19 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
     });
   };
 
+  useEffect(() => {
+    if (!isProcessing) {
+      setProcessingHint(null);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setProcessingHint('Still analyzing. Gemini is taking longer than usual — hang tight or retry if this stalls.');
+    }, 6000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [isProcessing]);
+
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
@@ -109,7 +102,8 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
       }
     } catch (err) {
       console.error("Camera access denied", err);
-      alert("Please allow camera access to use the scanner.");
+      setScanError('Camera access is blocked. Enable camera permission or use upload instead.');
+      setScanErrorSource('live');
     }
   };
 
@@ -146,6 +140,13 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
       
       if (mode === 'cloth') {
         const results = await analyzeClosetImage(base64);
+        if (!results.length) {
+          trackEvent('scan_failed', { source: 'upload', mode, reason: 'empty_result' });
+          setScanError('No items were confidently detected. Try a brighter image or adjust the framing.');
+          setScanErrorSource('upload');
+          setDetectedItems(null);
+          return;
+        }
         const items: WardrobeItem[] = results.map((res: any, index: number) => mapScanResultToItem(res, index, base64));
         setDetectedItems(items);
         setBaselineItems(Object.fromEntries(items.map(item => [item.id, {
@@ -157,54 +158,44 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
         }])));
         setLastScanTelemetry({ source: 'upload', mode, latencyMs: Date.now() - startTs });
         setScanError(null);
-        setLastScanTelemetry({ source: 'upload', mode, latencyMs: Date.now() - startTs });
-        trackEvent('scan_completed', {
-          source: 'upload',
-          mode,
-          items_detected: items.length,
-          latency_ms: Date.now() - startTs,
-        });
       } else {
         const res = await processQRCode(base64);
-        if (res) {
-          const item: WardrobeItem = {
-            id: `qr-${Date.now()}`,
-            category: (res.category as Category) || Category.TOP,
-            subcategory: res.subcategory || 'qr-item',
-            brand: res.brand || 'Digital Tag',
-            imageUrl: base64,
-            dominantColorHex: res.dominantColorHex || '#000000',
-            paletteHex: [res.dominantColorHex || '#000000'],
-            colorFamily: res.colorFamily || 'Neutral',
-            colorName: res.colorName || 'Unknown',
-            patternType: (res.patternType as PatternType) || PatternType.SOLID,
-            confidence: 1.0,
-            createdAt: Date.now(),
-          };
-          setDetectedItems([item]);
-          setBaselineItems({ [item.id]: {
-            category: item.category,
-            patternType: item.patternType,
-            subcategory: item.subcategory,
-            colorName: item.colorName,
-            colorFamily: item.colorFamily
-          } });
-          setLastScanTelemetry({ source: 'upload', mode, latencyMs: Date.now() - startTs });
-          setScanError(null);
-          setLastScanTelemetry({ source: 'upload', mode, latencyMs: Date.now() - startTs });
-          trackEvent('scan_completed', {
-            source: 'upload',
-            mode,
-            items_detected: 1,
-            latency_ms: Date.now() - startTs,
-          });
+        if (!res) {
+          trackEvent('scan_failed', { source: 'upload', mode, reason: 'empty_result' });
+          setScanError('We could not read that tag. Try centering the code or upload a sharper image.');
+          setScanErrorSource('upload');
+          setDetectedItems(null);
+          return;
         }
+        const item: WardrobeItem = {
+          id: `qr-${Date.now()}`,
+          category: (res.category as Category) || Category.TOP,
+          subcategory: res.subcategory || 'qr-item',
+          brand: res.brand || 'Digital Tag',
+          imageUrl: base64,
+          dominantColorHex: res.dominantColorHex || '#000000',
+          paletteHex: [res.dominantColorHex || '#000000'],
+          colorFamily: res.colorFamily || 'Neutral',
+          colorName: res.colorName || 'Unknown',
+          patternType: (res.patternType as PatternType) || PatternType.SOLID,
+          confidence: 1.0,
+          createdAt: Date.now(),
+        };
+        setDetectedItems([item]);
+        setBaselineItems({ [item.id]: {
+          category: item.category,
+          patternType: item.patternType,
+          subcategory: item.subcategory,
+          colorName: item.colorName,
+          colorFamily: item.colorFamily
+        } });
+        setLastScanTelemetry({ source: 'upload', mode, latencyMs: Date.now() - startTs });
+        setScanError(null);
       }
     } catch (error) {
       trackEvent('scan_failed', { source: 'upload', mode, reason: 'processing_error' });
       setScanError('Upload scan failed. Try a clearer image or retry.');
       setScanErrorSource('upload');
-      alert("Processing failed. Try a clearer photo.");
     } finally {
       setIsProcessing(false);
     }
@@ -218,9 +209,6 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
       setScanErrorSource('live');
       return;
     }
-      return;
-    }
-    if (!base64) return;
     const startTs = Date.now();
     trackEvent('scan_started', { source: 'live', mode });
     
@@ -231,41 +219,46 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
     try {
       if (mode === 'qr') {
         const res = await processQRCode(base64);
-        if (res) {
-          const item: WardrobeItem = {
-            id: `qr-${Date.now()}`,
-            category: (res.category as Category) || Category.TOP,
-            subcategory: res.subcategory || 'qr-item',
-            brand: res.brand || 'Digital Tag',
-            imageUrl: base64,
-            dominantColorHex: res.dominantColorHex || '#000000',
-            paletteHex: [res.dominantColorHex || '#000000'],
-            colorFamily: res.colorFamily || 'Neutral',
-            colorName: res.colorName || 'Unknown',
-            patternType: (res.patternType as PatternType) || PatternType.SOLID,
-            confidence: 1.0,
-            createdAt: Date.now(),
-          };
-          setDetectedItems([item]);
-          setBaselineItems({ [item.id]: {
-            category: item.category,
-            patternType: item.patternType,
-            subcategory: item.subcategory,
-            colorName: item.colorName,
-            colorFamily: item.colorFamily
-          } });
-          setLastScanTelemetry({ source: 'live', mode, latencyMs: Date.now() - startTs });
-          setScanError(null);
-          setLastScanTelemetry({ source: 'live', mode, latencyMs: Date.now() - startTs });
-          trackEvent('scan_completed', {
-            source: 'live',
-            mode,
-            items_detected: 1,
-            latency_ms: Date.now() - startTs,
-          });
+        if (!res) {
+          trackEvent('scan_failed', { source: 'live', mode, reason: 'empty_result' });
+          setScanError('No tag data was detected. Reposition the code in frame and retry.');
+          setScanErrorSource('live');
+          setDetectedItems(null);
+          return;
         }
+        const item: WardrobeItem = {
+          id: `qr-${Date.now()}`,
+          category: (res.category as Category) || Category.TOP,
+          subcategory: res.subcategory || 'qr-item',
+          brand: res.brand || 'Digital Tag',
+          imageUrl: base64,
+          dominantColorHex: res.dominantColorHex || '#000000',
+          paletteHex: [res.dominantColorHex || '#000000'],
+          colorFamily: res.colorFamily || 'Neutral',
+          colorName: res.colorName || 'Unknown',
+          patternType: (res.patternType as PatternType) || PatternType.SOLID,
+          confidence: 1.0,
+          createdAt: Date.now(),
+        };
+        setDetectedItems([item]);
+        setBaselineItems({ [item.id]: {
+          category: item.category,
+          patternType: item.patternType,
+          subcategory: item.subcategory,
+          colorName: item.colorName,
+          colorFamily: item.colorFamily
+        } });
+        setLastScanTelemetry({ source: 'live', mode, latencyMs: Date.now() - startTs });
+        setScanError(null);
       } else {
         const results = await analyzeClosetImage(base64);
+        if (!results.length) {
+          trackEvent('scan_failed', { source: 'live', mode, reason: 'empty_result' });
+          setScanError('No wardrobe items were found. Step back slightly and retry with better lighting.');
+          setScanErrorSource('live');
+          setDetectedItems(null);
+          return;
+        }
         const items: WardrobeItem[] = results.map((res: any, index: number) => mapScanResultToItem(res, index, base64));
         setDetectedItems(items);
         setBaselineItems(Object.fromEntries(items.map(item => [item.id, {
@@ -282,22 +275,6 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
       trackEvent('scan_failed', { source: 'live', mode, reason: 'processing_error' });
       setScanError('Live scan failed. Ensure subject is well lit and retry.');
       setScanErrorSource('live');
-      }
-    } catch (error) {
-      trackEvent('scan_failed', { source: 'live', mode, reason: 'processing_error' });
-      setScanError('Live scan failed. Ensure subject is well lit and retry.');
-      setScanErrorSource('live');
-        setLastScanTelemetry({ source: 'live', mode, latencyMs: Date.now() - startTs });
-        trackEvent('scan_completed', {
-          source: 'live',
-          mode,
-          items_detected: items.length,
-          latency_ms: Date.now() - startTs,
-        });
-      }
-    } catch (error) {
-      trackEvent('scan_failed', { source: 'live', mode, reason: 'processing_error' });
-      alert("Scan failed. Ensure the item/code is well lit and centered.");
     } finally {
       setIsProcessing(false);
     }
@@ -307,6 +284,11 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
     if (detectedItems) {
       const hasInvalid = detectedItems.some(item => !item.subcategory.trim() || !item.colorName.trim());
       if (hasInvalid) {
+        trackEvent('scan_failed', {
+          source: lastScanTelemetry?.source ?? 'upload',
+          mode,
+          reason: 'validation_error'
+        });
         setScanError('Please provide both subcategory and color name for all items before saving.');
         setScanErrorSource(lastScanTelemetry?.source ?? 'upload');
         return;
@@ -316,9 +298,6 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
       setDetectedItems(null);
       setPreviewUrl(null);
       setLastScanTelemetry(null);
-      setBaselineItems({});
-      setScanError(null);
-      setScanErrorSource(null);
       setBaselineItems({});
       setScanError(null);
       setScanErrorSource(null);
@@ -369,7 +348,7 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
 
 
   const applyFieldToSimilar = <K extends keyof WardrobeItem>(id: string, field: K, value: WardrobeItem[K]) => {
-    if (!detectedItems || !['category', 'patternType', 'colorFamily'].includes(String(field))) return;
+    if (!detectedItems || !['category', 'patternType', 'colorFamily', 'subcategory', 'colorName'].includes(String(field))) return;
     const source = detectedItems.find(i => i.id === id);
     if (!source) return;
 
@@ -395,7 +374,7 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
 
     trackEvent('scan_item_edited', {
       item_id: id,
-      fields: [field as 'category' | 'patternType' | 'colorFamily']
+      fields: [field as 'category' | 'patternType' | 'colorFamily' | 'subcategory' | 'colorName']
     });
   };
 
@@ -595,6 +574,12 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
                       onChange={(e) => updateDetectedItem(item.id, 'subcategory', e.target.value)}
                       className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
                     />
+                    <button
+                      onClick={() => applyFieldToSimilar(item.id, 'subcategory', item.subcategory)}
+                      className="mt-1 text-[9px] text-indigo-500 font-bold hover:underline text-left"
+                    >
+                      Apply to similar
+                    </button>
                   </label>
 
                   <label className="text-[10px] font-bold text-slate-500 flex flex-col gap-1">
@@ -604,6 +589,12 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
                       onChange={(e) => updateDetectedItem(item.id, 'colorName', e.target.value)}
                       className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
                     />
+                    <button
+                      onClick={() => applyFieldToSimilar(item.id, 'colorName', item.colorName)}
+                      className="mt-1 text-[9px] text-indigo-500 font-bold hover:underline text-left"
+                    >
+                      Apply to similar
+                    </button>
                   </label>
 
                   <label className="text-[10px] font-bold text-slate-500 flex flex-col gap-1">
@@ -626,66 +617,6 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
                   </label>
                 </div>
                 )}
-                </div>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="text-[10px] font-bold text-slate-500 flex flex-col gap-1">
-                    Category
-                    <select
-                      value={item.category}
-                      onChange={(e) => updateDetectedItem(item.id, 'category', e.target.value as Category)}
-                      className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
-                    >
-                      {CATEGORY_OPTIONS.map((category) => (
-                        <option key={category} value={category}>{category}</option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="text-[10px] font-bold text-slate-500 flex flex-col gap-1">
-                    Pattern
-                    <select
-                      value={item.patternType}
-                      onChange={(e) => updateDetectedItem(item.id, 'patternType', e.target.value as PatternType)}
-                      className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
-                    >
-                      {PATTERN_OPTIONS.map((pattern) => (
-                        <option key={pattern} value={pattern}>{pattern}</option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="text-[10px] font-bold text-slate-500 flex flex-col gap-1 col-span-2">
-                    Subcategory
-                    <input
-                      value={item.subcategory}
-                      onChange={(e) => updateDetectedItem(item.id, 'subcategory', e.target.value)}
-                      className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
-                    />
-                  </label>
-
-                  <label className="text-[10px] font-bold text-slate-500 flex flex-col gap-1">
-                    Color Name
-                    <input
-                      value={item.colorName}
-                      onChange={(e) => updateDetectedItem(item.id, 'colorName', e.target.value)}
-                      className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
-                    />
-                  </label>
-
-                  <label className="text-[10px] font-bold text-slate-500 flex flex-col gap-1">
-                    Color Family
-                    <select
-                      value={item.colorFamily}
-                      onChange={(e) => updateDetectedItem(item.id, 'colorFamily', e.target.value)}
-                      className="px-2 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700"
-                    >
-                      {COLOR_FAMILY_OPTIONS.map((family) => (
-                        <option key={family} value={family}>{family}</option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
               </div>
             ))}
             {detectedItems.length === 0 && (
@@ -699,6 +630,30 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
 
   return (
     <div className="max-w-2xl mx-auto py-12 px-4 space-y-6">
+      <div className="rounded-[2.25rem] border border-white/10 bg-white/5 backdrop-blur-2xl p-6 text-center shadow-[0_24px_80px_rgba(15,23,42,0.28)]">
+        <div className="inline-flex items-center gap-2 rounded-full border border-indigo-400/20 bg-indigo-400/10 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.24em] text-indigo-200">
+          Scan Studio
+        </div>
+        <h1 className="mt-4 text-3xl font-black tracking-tight text-white">A premium intake flow for wardrobe capture.</h1>
+        <p className="mt-3 text-sm leading-relaxed text-slate-300">
+          Move from closet scan to polished review with spatial overlays, inline corrections, and confidence-aware prompts designed to feel more like a luxury tool than a utility form.
+        </p>
+
+        <div className="mt-6 grid md:grid-cols-3 gap-3 text-left">
+          {[
+            { label: 'Agent 1', title: 'Detection', desc: 'Finds garment regions and isolates likely wardrobe shapes.' },
+            { label: 'Agent 2', title: 'Classification', desc: 'Assigns category, pattern, and color naming with editable outputs.' },
+            { label: 'Agent 3', title: 'Review', desc: 'Lets you validate or override AI judgment before anything is saved.' },
+          ].map((agent) => (
+            <div key={agent.label} className="rounded-2xl border border-white/10 bg-slate-900/50 px-4 py-3">
+              <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{agent.label}</p>
+              <p className="mt-2 text-sm font-bold text-white">{agent.title}</p>
+              <p className="mt-1 text-xs leading-relaxed text-slate-400">{agent.desc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="flex bg-slate-100 p-1 rounded-2xl w-fit mx-auto shadow-sm">
         <button 
           onClick={() => { setMode('cloth'); stopCamera(); }}
@@ -764,6 +719,9 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
                 {mode === 'qr' ? 'Decrypting Secure Tag...' : 'Gemini Spatial Intelligence active'}
               </p>
               <p className="text-xs text-slate-400">Mapping items in 3D space</p>
+              {processingHint && (
+                <p className="text-xs text-amber-600 font-semibold">{processingHint}</p>
+              )}
             </div>
           </div>
         ) : (

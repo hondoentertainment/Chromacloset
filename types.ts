@@ -48,6 +48,8 @@ export interface OutfitRecommendation {
   itemIds: string[];
   occasion: string;
   styleVibe: string;
+  weatherFocus?: 'warm' | 'cold' | 'mild' | 'rain';
+  score?: number;
   isSaved?: boolean;
   dateSaved?: number;
   lastWorn?: number;
@@ -73,3 +75,4 @@ export interface ChatMessage {
 }
 
 export type StylePersona = 'Minimalist' | 'Streetwear' | 'Classic Professional' | 'Bohemian' | 'Quiet Luxury' | 'Bold & Eclectic';
+export type AgentMode = 'Precision' | 'Balanced' | 'Editorial';
