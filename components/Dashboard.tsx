@@ -152,6 +152,36 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <div className="space-y-8 py-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <section className="rounded-[2.5rem] border border-white/10 bg-white/5 backdrop-blur-2xl p-8 md:p-10 shadow-[0_24px_90px_rgba(15,23,42,0.35)]">
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8">
+          <div className="space-y-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-indigo-400/20 bg-indigo-400/10 px-4 py-1.5 text-xs font-black uppercase tracking-[0.24em] text-indigo-200">
+              Wardrobe performance overview
+            </div>
+            <div>
+              <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">Luxury intelligence for every piece you own.</h2>
+              <p className="text-slate-300 mt-3 max-w-2xl leading-relaxed">
+                Track collection density, identify underrepresented tones, and spot the next move your closet needs from a single editorial-style command surface.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: 'Closet depth', value: `${stats.total} pieces` },
+              { label: 'Dominant family', value: stats.mostCommonColorFamily },
+              { label: 'Balance score', value: `${stats.colorBalanceScore}/100` },
+              { label: 'Style signal', value: stats.dominantLookType },
+            ].map((kpi) => (
+              <div key={kpi.label} className="rounded-2xl border border-white/10 bg-slate-900/50 px-4 py-3">
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{kpi.label}</p>
+                <p className="mt-2 text-lg font-black text-white capitalize">{kpi.value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Design Studio Modal */}
       {isStudioOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xl">

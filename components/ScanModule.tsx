@@ -630,6 +630,16 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
 
   return (
     <div className="max-w-2xl mx-auto py-12 px-4 space-y-6">
+      <div className="rounded-[2.25rem] border border-white/10 bg-white/5 backdrop-blur-2xl p-6 text-center shadow-[0_24px_80px_rgba(15,23,42,0.28)]">
+        <div className="inline-flex items-center gap-2 rounded-full border border-indigo-400/20 bg-indigo-400/10 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.24em] text-indigo-200">
+          Scan Studio
+        </div>
+        <h1 className="mt-4 text-3xl font-black tracking-tight text-white">A premium intake flow for wardrobe capture.</h1>
+        <p className="mt-3 text-sm leading-relaxed text-slate-300">
+          Move from closet scan to polished review with spatial overlays, inline corrections, and confidence-aware prompts designed to feel more like a luxury tool than a utility form.
+        </p>
+      </div>
+
       <div className="flex bg-slate-100 p-1 rounded-2xl w-fit mx-auto shadow-sm">
         <button 
           onClick={() => { setMode('cloth'); stopCamera(); }}

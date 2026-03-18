@@ -337,6 +337,35 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
 
   return (
     <div className="py-12 max-w-6xl mx-auto space-y-12 px-4 animate-in fade-in duration-700 relative">
+      <section className="rounded-[2.5rem] border border-white/10 bg-white/5 backdrop-blur-2xl p-8 md:p-10 shadow-[0_24px_90px_rgba(15,23,42,0.28)]">
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8">
+          <div className="space-y-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-fuchsia-400/20 bg-fuchsia-400/10 px-4 py-1.5 text-xs font-black uppercase tracking-[0.24em] text-fuchsia-200">
+              Style Concierge Experience
+            </div>
+            <div>
+              <h1 className="text-3xl md:text-4xl font-black tracking-tight text-white">Editorial-grade outfit curation with live AI assistance.</h1>
+              <p className="mt-3 max-w-2xl text-slate-300 leading-relaxed">
+                Build looks with weather context, save high-performing combinations, and refine your aesthetic with a premium recommendation workspace inspired by modern luxury retail tooling.
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: 'Inventory ready', value: items.length },
+              { label: 'Saved looks', value: savedOutfits.length },
+              { label: 'Persona', value: persona },
+              { label: 'Occasion', value: occasion },
+            ].map((card) => (
+              <div key={card.label} className="rounded-2xl border border-white/10 bg-slate-900/50 px-4 py-3">
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{card.label}</p>
+                <p className="mt-2 text-lg font-black text-white">{card.value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Toast Notification */}
       {toast && (
         <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] bg-slate-900 text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in slide-in-from-bottom-10">
