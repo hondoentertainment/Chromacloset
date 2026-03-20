@@ -22,6 +22,14 @@ export const AI_RUNTIME_PROFILE = {
     promptVersion: 'gap-v1',
     model: 'gemini-3-flash-preview',
   },
+  shoppingSearch: {
+    promptVersion: 'shopping-search-v1',
+    model: 'gemini-3-pro-preview',
+  },
+  brandIcon: {
+    promptVersion: 'brand-icon-v1',
+    model: 'gemini-2.5-flash-image',
+  },
 } as const;
 
 export const AGENT_MODE_CONFIG: Record<AgentMode, { title: string; description: string; instructions: string }> = {

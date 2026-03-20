@@ -1,7 +1,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
-import { WardrobeItem, ScanResult } from '../types';
+import { WardrobeItem, ScanResult, OutfitRecommendation } from '../types';
 import { generateClosetIcon } from '../services/geminiService';
 import { analyzeWardrobeGaps } from '../services/stylistService';
 import { trackEvent } from '../services/analyticsService';
@@ -10,10 +10,12 @@ import { buildProductionReadinessSnapshot } from '../services/productionReadines
 interface DashboardProps {
   items: WardrobeItem[];
   scans: ScanResult[];
+  savedOutfits: OutfitRecommendation[];
   onDeleteScan: (timestamp: number) => void;
   totalScannedCount: number;
   closetIcon: string | null;
   onIconUpdate: (iconUrl: string) => void;
+  showInternalInsights?: boolean;
 }
 
 const STYLE_VIBES = [
@@ -25,7 +27,7 @@ const STYLE_VIBES = [
 ];
 
 export const Dashboard: React.FC<DashboardProps> = ({ 
-  items, scans, onDeleteScan, totalScannedCount, closetIcon, onIconUpdate 
+  items, scans, savedOutfits, onDeleteScan, totalScannedCount, closetIcon, onIconUpdate, showInternalInsights = false
 }) => {
   const [isStudioOpen, setIsStudioOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -34,15 +36,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [isGapLoading, setIsGapLoading] = useState(false);
   const [gapSuggestion, setGapSuggestion] = useState<{ itemType: string; suggestedColor: string; reasoning: string; priority: 'high' | 'medium' | 'low' } | null>(null);
   const [gapError, setGapError] = useState<string | null>(null);
-  const savedOutfits = useMemo(() => {
-    try {
-      const raw = localStorage.getItem('chromacloset_saved_outfits');
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }, []);
+
+
 
   const stats = useMemo(() => {
     const total = items.length;
@@ -289,6 +284,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       )}
 
+      {showInternalInsights && (
       <section className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-6">
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
           <div>
@@ -371,6 +367,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
       </section>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Main Stats */}

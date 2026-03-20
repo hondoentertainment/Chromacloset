@@ -7,6 +7,8 @@ import { buildPreferenceMemory, getStyleBriefSuggestion, rerankOutfitsWithPrefer
 
 interface StylistModuleProps {
   items: WardrobeItem[];
+  savedOutfits: OutfitRecommendation[];
+  onSavedOutfitsChange: React.Dispatch<React.SetStateAction<OutfitRecommendation[]>>;
 }
 
 const PERSONAS: StylePersona[] = ['Minimalist', 'Streetwear', 'Classic Professional', 'Bohemian', 'Quiet Luxury', 'Bold & Eclectic'];
@@ -187,15 +189,11 @@ const OutfitCard: React.FC<OutfitCardProps> = ({
   );
 };
 
-export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
+export const StylistModule: React.FC<StylistModuleProps> = ({ items, savedOutfits, onSavedOutfitsChange }) => {
   const [occasion, setOccasion] = useState('Casual Weekend');
   const [persona, setPersona] = useState<StylePersona>('Minimalist');
   const [agentMode, setAgentMode] = useState<AgentMode>('Balanced');
   const [outfits, setOutfits] = useState<OutfitRecommendation[]>([]);
-  const [savedOutfits, setSavedOutfits] = useState<OutfitRecommendation[]>(() => {
-    const saved = localStorage.getItem('chromacloset_saved_outfits');
-    return saved ? JSON.parse(saved) : [];
-  });
   const [gaps, setGaps] = useState<WardrobeGap[]>([]);
   const [loading, setLoading] = useState(false);
   const [gapLoading, setGapLoading] = useState(false);
@@ -230,9 +228,6 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
     return () => window.clearTimeout(timeoutId);
   }, [loading]);
 
-  useEffect(() => {
-    localStorage.setItem('chromacloset_saved_outfits', JSON.stringify(savedOutfits));
-  }, [savedOutfits]);
 
   useEffect(() => {
     if (isChatOpen && !chatSessionRef.current) {
@@ -332,26 +327,26 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
   const toggleSaveOutfit = (outfit: OutfitRecommendation) => {
     const isAlreadySaved = savedOutfits.some(o => o.id === outfit.id);
     if (isAlreadySaved) {
-      setSavedOutfits(prev => prev.filter(o => o.id !== outfit.id));
+      onSavedOutfitsChange(prev => prev.filter(o => o.id !== outfit.id));
       trackEvent('outfit_unsaved', { outfit_id: outfit.id });
       showToast("Removed from Lookbook");
     } else {
       const newOutfit = { ...outfit, isSaved: true, dateSaved: Date.now() };
-      setSavedOutfits(prev => [newOutfit, ...prev]);
+      onSavedOutfitsChange(prev => [newOutfit, ...prev]);
       trackEvent('outfit_saved', { outfit_id: outfit.id });
       showToast("Added to Lookbook ✨");
     }
   };
 
   const updateOutfitUsage = (id: string) => {
-    setSavedOutfits(prev => prev.map(o => 
+    onSavedOutfitsChange(prev => prev.map(o =>
       o.id === id ? { ...o, lastWorn: Date.now() } : o
     ));
     showToast("Outfit marked as worn today!");
   };
 
   const updateOutfitNotes = (id: string, notes: string) => {
-    setSavedOutfits(prev => prev.map(o => 
+    onSavedOutfitsChange(prev => prev.map(o =>
       o.id === id ? { ...o, userNotes: notes } : o
     ));
   };
@@ -359,7 +354,7 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
 
   const setOutfitFeedback = (id: string, feedback: 'love' | 'skip', source: 'curator' | 'lookbook') => {
     setOutfits(prev => prev.map(o => o.id === id ? { ...o, outfitFeedback: feedback } : o));
-    setSavedOutfits(prev => prev.map(o => o.id === id ? { ...o, outfitFeedback: feedback } : o));
+    onSavedOutfitsChange(prev => prev.map(o => o.id === id ? { ...o, outfitFeedback: feedback } : o));
     trackEvent('outfit_feedback_given', { outfit_id: id, feedback, source });
     showToast(feedback === 'love' ? 'Preference saved: Love this look' : 'Preference saved: Skip this look');
   };

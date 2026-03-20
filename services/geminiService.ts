@@ -1,7 +1,8 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { Type } from "@google/genai";
 import { WardrobeItem } from "../types.js";
 import { AI_RUNTIME_PROFILE, buildQrExtractionPrompt, buildScanAnalysisPrompt } from "./aiConfig.js";
+import { createGeminiClient } from './aiClient.js';
 
 const ITEM_SCHEMA = {
   type: Type.OBJECT,
@@ -48,7 +49,7 @@ const ITEM_SCHEMA = {
 };
 
 export const analyzeClosetImage = async (base64Image: string): Promise<any[]> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = createGeminiClient();
   
   try {
     const base64Data = base64Image.includes(',') ? base64Image.split(',')[1] : base64Image;
@@ -85,7 +86,7 @@ export const analyzeClosetImage = async (base64Image: string): Promise<any[]> =>
 };
 
 export const processQRCode = async (base64Image: string): Promise<Partial<WardrobeItem> | null> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = createGeminiClient();
   
   try {
     const base64Data = base64Image.includes(',') ? base64Image.split(',')[1] : base64Image;
@@ -119,13 +120,13 @@ export const processQRCode = async (base64Image: string): Promise<Partial<Wardro
 };
 
 export const generateClosetIcon = async (vibe: string = "minimalist and modern", colorContext: string = "a spectrum of vibrant colors"): Promise<string> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = createGeminiClient();
   
   try {
     const prompt = `A ${vibe} brand icon for a digital wardrobe app called Chromacloset. The icon features a stylized open closet with neatly arranged clothes hanging on a rack, showcasing ${colorContext}. High-end vector art style, clean lines, professional branding, white background.`;
     
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
+      model: AI_RUNTIME_PROFILE.brandIcon.model,
       contents: {
         parts: [{ text: prompt }],
       },

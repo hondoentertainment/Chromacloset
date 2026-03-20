@@ -1,6 +1,7 @@
-import { GoogleGenAI, Type } from "@google/genai";
+import { Type } from "@google/genai";
 import { WardrobeItem, OutfitRecommendation, WardrobeGap, StylePersona, Category, AgentMode } from "../types.js";
 import { AGENT_MODE_CONFIG, AI_RUNTIME_PROFILE, buildOutfitGenerationPrompt, buildStylingChatSystemInstruction, buildWardrobeGapPrompt } from "./aiConfig.js";
+import { createGeminiClient } from "./aiClient.js";
 import { getWeatherFocus, normalizeOutfits } from "./stylistLogic.js";
 
 const buildFallbackOutfits = (
@@ -91,7 +92,7 @@ export const generateOutfits = async (
 ): Promise<OutfitRecommendation[]> => {
   if (items.length < 2) return [];
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = createGeminiClient();
 
   const itemManifest = items.map(i => ({
     id: i.id,
@@ -136,7 +137,7 @@ export const generateOutfits = async (
 };
 
 export const createStylingChat = (items: WardrobeItem[], persona: StylePersona, agentMode: AgentMode = 'Balanced') => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = createGeminiClient();
 
   return ai.chats.create({
     model: AI_RUNTIME_PROFILE.stylistChat.model,
@@ -147,9 +148,9 @@ export const createStylingChat = (items: WardrobeItem[], persona: StylePersona, 
 };
 
 export const searchForGapItems = async (gap: WardrobeGap) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = createGeminiClient();
   const response = await ai.models.generateContent({
-    model: "gemini-3-pro-preview",
+    model: AI_RUNTIME_PROFILE.shoppingSearch.model,
     contents: `Find shopping recommendations for a ${gap.suggestedColor} ${gap.itemType}. Focus on brands like Everlane, Uniqlo, or high-quality basics.`,
     config: {
       tools: [{ googleSearch: {} }]
@@ -166,7 +167,7 @@ export const searchForGapItems = async (gap: WardrobeGap) => {
 export const analyzeWardrobeGaps = async (items: WardrobeItem[]): Promise<WardrobeGap[]> => {
   if (items.length === 0) return [];
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = createGeminiClient();
   const itemManifest = items.map(i => ({
     category: i.category,
     type: i.subcategory,
