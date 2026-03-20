@@ -5,6 +5,7 @@ import { WardrobeItem, ScanResult } from '../types';
 import { generateClosetIcon } from '../services/geminiService';
 import { analyzeWardrobeGaps } from '../services/stylistService';
 import { trackEvent } from '../services/analyticsService';
+import { buildProductionReadinessSnapshot } from '../services/productionReadinessService';
 
 interface DashboardProps {
   items: WardrobeItem[];
@@ -33,6 +34,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [isGapLoading, setIsGapLoading] = useState(false);
   const [gapSuggestion, setGapSuggestion] = useState<{ itemType: string; suggestedColor: string; reasoning: string; priority: 'high' | 'medium' | 'low' } | null>(null);
   const [gapError, setGapError] = useState<string | null>(null);
+  const savedOutfits = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('chromacloset_saved_outfits');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, []);
 
   const stats = useMemo(() => {
     const total = items.length;
@@ -48,19 +58,43 @@ export const Dashboard: React.FC<DashboardProps> = ({
       acc[item.category] = (acc[item.category] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
+    const leastRepresentedFamilyEntry = Object.entries(familyCounts)
+      .sort((a, b) => (a[1] as number) - (b[1] as number))[0];
 
-    // FIX: Explicitly cast counts to number to resolve "The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type" error.
     const mostCommonColorFamily = items.length > 0 
       ? Object.entries(familyCounts).sort((a, b) => (b[1] as number) - (a[1] as number))[0][0]
       : 'vibrant colors';
+    const categoryValues = Object.values(categoryCounts) as number[];
+    const colorBalanceScore = items.length > 0
+      ? Math.max(35, Math.round((families / Math.max(1, total)) * 100 + 45))
+      : 0;
+    const wardrobeDiversityScore = categoryValues.length > 0
+      ? Math.max(30, Math.round((Math.min(...categoryValues) / Math.max(...categoryValues)) * 100))
+      : 0;
+    const mostWornLookType: Record<string, number> = savedOutfits.length > 0
+      ? savedOutfits
+          .reduce((acc, outfit) => {
+            acc[outfit.styleVibe] = (acc[outfit.styleVibe] || 0) + (outfit.lastWorn ? 2 : 1);
+            return acc;
+          }, {} as Record<string, number>)
+      : {};
+    const dominantLookType = Object.keys(mostWornLookType).length > 0
+      ? Object.entries(mostWornLookType).sort((a, b) => b[1] - a[1])[0][0]
+      : 'Not enough wear data yet';
 
     return { 
       total, colors, families, 
       mostCommonColorFamily,
+      leastRepresentedFamily: leastRepresentedFamilyEntry?.[0] || 'Neutral',
+      colorBalanceScore,
+      wardrobeDiversityScore,
+      dominantLookType,
       familyData: Object.entries(familyCounts).map(([name, value]) => ({ name, value })),
       categoryData: Object.entries(categoryCounts).map(([name, value]) => ({ name, value }))
     };
-  }, [items]);
+  }, [items, savedOutfits]);
+
+  const productionSnapshot = useMemo(() => buildProductionReadinessSnapshot(items, scans, savedOutfits), [items, scans, savedOutfits]);
 
   const handleGenerateInStudio = async () => {
     setIsGenerating(true);
@@ -109,9 +143,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
       }
     } catch (error) {
       trackEvent('dashboard_gap_suggestion_failed', { reason: 'service_error' });
-        setGapError('No clear gap found yet — your closet may already be well balanced.');
-      }
-    } catch (error) {
       setGapError('Could not generate a suggestion right now. Please retry.');
     } finally {
       setIsGapLoading(false);
@@ -124,6 +155,36 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <div className="space-y-8 py-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <section className="rounded-[2.5rem] border border-white/10 bg-white/5 backdrop-blur-2xl p-8 md:p-10 shadow-[0_24px_90px_rgba(15,23,42,0.35)]">
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8">
+          <div className="space-y-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-indigo-400/20 bg-indigo-400/10 px-4 py-1.5 text-xs font-black uppercase tracking-[0.24em] text-indigo-200">
+              Wardrobe performance overview
+            </div>
+            <div>
+              <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">Luxury intelligence for every piece you own.</h2>
+              <p className="text-slate-300 mt-3 max-w-2xl leading-relaxed">
+                Track collection density, identify underrepresented tones, and spot the next move your closet needs from a single editorial-style command surface.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: 'Closet depth', value: `${stats.total} pieces` },
+              { label: 'Dominant family', value: stats.mostCommonColorFamily },
+              { label: 'Balance score', value: `${stats.colorBalanceScore}/100` },
+              { label: 'Style signal', value: stats.dominantLookType },
+            ].map((kpi) => (
+              <div key={kpi.label} className="rounded-2xl border border-white/10 bg-slate-900/50 px-4 py-3">
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{kpi.label}</p>
+                <p className="mt-2 text-lg font-black text-white capitalize">{kpi.value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Design Studio Modal */}
       {isStudioOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xl">
@@ -228,6 +289,89 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       )}
 
+      <section className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-6">
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+          <div>
+            <p className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.22em]">Multi-agent production center</p>
+            <h3 className="mt-2 text-2xl font-black text-slate-900">Five production agents driving the next roadmap phases.</h3>
+            <p className="mt-2 max-w-3xl text-sm text-slate-500">This command center turns the next five VC-priority phases into visible, testable product systems: ingestion, planning, memory, gap prioritization, and sync readiness.</p>
+          </div>
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-600">Sync readiness</p>
+            <p className="mt-2 text-xl font-black text-slate-900">{productionSnapshot.syncSummary.syncReadinessScore}/100</p>
+            <p className="text-xs text-slate-500">{productionSnapshot.syncSummary.items} items · {productionSnapshot.syncSummary.scans} scans · {productionSnapshot.syncSummary.savedLooks} saved looks</p>
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-2 xl:grid-cols-5 gap-4">
+          {productionSnapshot.agentCards.map((agent) => (
+            <div key={agent.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{agent.phase}</p>
+                  <h4 className="text-sm font-bold text-slate-900">{agent.title}</h4>
+                </div>
+                <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${agent.status === 'ready' ? 'bg-emerald-100 text-emerald-700' : agent.status === 'needs_attention' ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600'}`}>
+                  {agent.status.replace('_', ' ')}
+                </span>
+              </div>
+              <p className="text-sm font-semibold text-slate-900">{agent.headline}</p>
+              <p className="text-xs text-slate-500 leading-relaxed">{agent.detail}</p>
+              <p className="text-[11px] text-indigo-600 font-semibold">{agent.testingNote}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid lg:grid-cols-[1.3fr,0.9fr,0.8fr] gap-4">
+          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Planner agent</p>
+            <h4 className="mt-2 text-lg font-bold text-slate-900">Weekly plan preview</h4>
+            <div className="mt-4 space-y-3">
+              {productionSnapshot.weeklyPlan.map((entry) => (
+                <div key={entry.dayLabel} className="flex items-start justify-between gap-3 rounded-xl bg-white border border-slate-100 px-3 py-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{entry.dayLabel}</p>
+                    <p className="mt-1 text-sm font-bold text-slate-900">{entry.title}</p>
+                  </div>
+                  <p className="max-w-[14rem] text-right text-xs text-slate-500">{entry.note}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Ingestion agent</p>
+            <h4 className="mt-2 text-lg font-bold text-slate-900">Duplicate review queue</h4>
+            <div className="mt-4 space-y-3">
+              {productionSnapshot.duplicateCandidates.length > 0 ? productionSnapshot.duplicateCandidates.slice(0, 3).map((candidate) => (
+                <div key={`${candidate.sourceId}-${candidate.duplicateId}`} className="rounded-xl bg-white border border-slate-100 px-3 py-3">
+                  <p className="text-sm font-bold text-slate-900">{candidate.sourceId} ↔ {candidate.duplicateId}</p>
+                  <p className="mt-1 text-xs text-slate-500">{candidate.reason}</p>
+                </div>
+              )) : (
+                <p className="text-sm text-slate-500">No likely duplicates detected in the current wardrobe graph.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Gap agent</p>
+            <h4 className="mt-2 text-lg font-bold text-slate-900">Local priority gap</h4>
+            {productionSnapshot.prioritizedGaps[0] ? (
+              <div className="mt-4 space-y-3">
+                <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-black uppercase ${productionSnapshot.prioritizedGaps[0].priority === 'high' ? 'bg-rose-100 text-rose-700' : productionSnapshot.prioritizedGaps[0].priority === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                  {productionSnapshot.prioritizedGaps[0].priority} priority
+                </span>
+                <p className="text-sm font-bold text-slate-900">{productionSnapshot.prioritizedGaps[0].suggestedColor} {productionSnapshot.prioritizedGaps[0].itemType}</p>
+                <p className="text-xs text-slate-500">{productionSnapshot.prioritizedGaps[0].reasoning}</p>
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-slate-500">No local gap identified yet.</p>
+            )}
+          </div>
+        </div>
+      </section>
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Main Stats */}
         <div className="lg:col-span-9 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -274,6 +418,32 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       <div className="grid lg:grid-cols-12 gap-8">
         <div className="lg:col-span-8 space-y-8">
+          <div className="grid md:grid-cols-3 gap-4">
+            {[
+              {
+                label: 'Color Balance Score',
+                value: `${stats.colorBalanceScore}/100`,
+                note: stats.colorBalanceScore >= 75 ? 'Great spread across color families.' : `Add more ${stats.leastRepresentedFamily.toLowerCase()} pieces for balance.`,
+              },
+              {
+                label: 'Wardrobe Diversity',
+                value: `${stats.wardrobeDiversityScore}/100`,
+                note: stats.wardrobeDiversityScore >= 70 ? 'Category mix looks healthy.' : 'Your closet leans heavily into a few categories.',
+              },
+              {
+                label: 'Most Worn Look Type',
+                value: stats.dominantLookType,
+                note: savedOutfits.length > 0 ? 'Based on saved looks and wear marks.' : 'Save and wear outfits to unlock this insight.',
+              }
+            ].map((insight) => (
+              <div key={insight.label} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{insight.label}</p>
+                <p className="text-xl font-bold text-slate-900 mt-2">{insight.value}</p>
+                <p className="text-xs text-slate-500 mt-2 leading-relaxed">{insight.note}</p>
+              </div>
+            ))}
+          </div>
+
           {items.length > 0 ? (
             <>
               <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
@@ -371,9 +541,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   {gapSuggestion.suggestedColor} {gapSuggestion.itemType}
                 </p>
                 <p className="text-xs text-slate-500 leading-relaxed">{gapSuggestion.reasoning}</p>
+                <p className="text-[11px] text-indigo-600 font-semibold">
+                  Insight: your lightest coverage today is in {stats.leastRepresentedFamily.toLowerCase()} tones.
+                </p>
               </div>
             ) : (
-              <p className="text-sm text-slate-500">Get one AI recommendation to improve outfit versatility.</p>
+              <div className="space-y-2">
+                <p className="text-sm text-slate-500">Get one AI recommendation to improve outfit versatility.</p>
+                <p className="text-xs text-slate-400">Current nudge: look for more {stats.leastRepresentedFamily.toLowerCase()} options to diversify your palette.</p>
+              </div>
             )}
 
             {gapError && <p className="text-xs text-rose-600 mt-3">{gapError}</p>}

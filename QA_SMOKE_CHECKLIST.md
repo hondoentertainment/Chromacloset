@@ -21,6 +21,8 @@ Quick manual verification checklist for core UX and analytics integrity before e
    - Upload or capture a scan.
    - Confirm `scan_started` event.
    - In review mode, edit an item field and confirm `scan_item_edited`.
+   - Use **Apply to similar** on at least one editable field.
+   - Confirm validation blocks save when subcategory or color name is blank.
    - Save to closet and confirm `scan_completed`.
 
 4. **Scan Error & Retry**
@@ -34,7 +36,9 @@ Quick manual verification checklist for core UX and analytics integrity before e
 
 6. **Stylist Generate**
    - Generate outfits with >=2 inventory items.
+   - Add a weather context and confirm suggestions still include top + bottom.
    - Verify `outfits_requested` and `outfits_generated` (or `outfits_generation_failed`).
+   - On long-running or failed requests, verify retry/error copy appears.
 
 7. **Stylist Chat**
    - Open chat and send a message.
@@ -48,6 +52,7 @@ Quick manual verification checklist for core UX and analytics integrity before e
 ## Data Integrity Checks
 - Confirm all events include `schema_version` in payload.
 - Confirm no duplicate `scan_completed` event for a single save action.
+- Confirm analytics export copy buttons return JSON/CSV payloads from the Debug Panel.
 
 ## Exit Criteria
 - All flows pass without blocking UI issues.

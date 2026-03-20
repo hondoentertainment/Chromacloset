@@ -1,6 +1,7 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { WardrobeItem } from "../types";
+import { WardrobeItem } from "../types.js";
+import { AI_RUNTIME_PROFILE, buildQrExtractionPrompt, buildScanAnalysisPrompt } from "./aiConfig.js";
 
 const ITEM_SCHEMA = {
   type: Type.OBJECT,
@@ -60,11 +61,11 @@ export const analyzeClosetImage = async (base64Image: string): Promise<any[]> =>
     };
     
     const textPart = {
-      text: "Analyze this wardrobe photo. Detect and localize EVERY distinct clothing item or accessory. For each item, provide its attributes and a [ymin, xmin, ymax, xmax] bounding box in normalized coordinates (0-1000). Return a JSON array.",
+      text: buildScanAnalysisPrompt(),
     };
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: AI_RUNTIME_PROFILE.scanAnalysis.model,
       contents: { parts: [imagePart, textPart] },
       config: {
         responseMimeType: "application/json",
@@ -97,11 +98,11 @@ export const processQRCode = async (base64Image: string): Promise<Partial<Wardro
     };
     
     const textPart = {
-      text: "Extract the content from the QR code in this image. The QR code should contain product details for a clothing item. Return only the JSON object.",
+      text: buildQrExtractionPrompt(),
     };
 
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: AI_RUNTIME_PROFILE.qrExtraction.model,
       contents: { parts: [imagePart, textPart] },
       config: {
         responseMimeType: "application/json",
