@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { analyzeClosetImage, processQRCode } from '../services/geminiService';
 import { WardrobeItem, Category, PatternType, BoundingBox } from '../types';
 import { trackEvent } from '../services/analyticsService';
+import { applyEditToItem, applyFieldToSimilarItems, createBaselineItems, isEditableScanField, resetItemToBaseline as resetScanItemToBaseline } from '../services/scanReviewService.js';
 
 export type ScanMode = 'cloth' | 'qr';
 
@@ -149,13 +150,7 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
         }
         const items: WardrobeItem[] = results.map((res: any, index: number) => mapScanResultToItem(res, index, base64));
         setDetectedItems(items);
-        setBaselineItems(Object.fromEntries(items.map(item => [item.id, {
-          category: item.category,
-          patternType: item.patternType,
-          subcategory: item.subcategory,
-          colorName: item.colorName,
-          colorFamily: item.colorFamily
-        }])));
+        setBaselineItems(createBaselineItems(items));
         setLastScanTelemetry({ source: 'upload', mode, latencyMs: Date.now() - startTs });
         setScanError(null);
       } else {
@@ -182,6 +177,7 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
           createdAt: Date.now(),
         };
         setDetectedItems([item]);
+        setBaselineItems(createBaselineItems([item]));
         setBaselineItems({ [item.id]: {
           category: item.category,
           patternType: item.patternType,
@@ -241,6 +237,7 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
           createdAt: Date.now(),
         };
         setDetectedItems([item]);
+        setBaselineItems(createBaselineItems([item]));
         setBaselineItems({ [item.id]: {
           category: item.category,
           patternType: item.patternType,
@@ -261,13 +258,7 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
         }
         const items: WardrobeItem[] = results.map((res: any, index: number) => mapScanResultToItem(res, index, base64));
         setDetectedItems(items);
-        setBaselineItems(Object.fromEntries(items.map(item => [item.id, {
-          category: item.category,
-          patternType: item.patternType,
-          subcategory: item.subcategory,
-          colorName: item.colorName,
-          colorFamily: item.colorFamily
-        }])));
+        setBaselineItems(createBaselineItems(items));
         setLastScanTelemetry({ source: 'live', mode, latencyMs: Date.now() - startTs });
         setScanError(null);
       }
@@ -321,59 +312,36 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
 
 
   const updateDetectedItem = <K extends keyof WardrobeItem>(id: string, field: K, value: WardrobeItem[K]) => {
-    if (!['category', 'patternType', 'subcategory', 'colorName', 'colorFamily'].includes(String(field))) {
+    if (!isEditableScanField(field)) {
       return;
     }
+    const editableField = field;
 
     setDetectedItems(prev => prev ? prev.map(item => {
       if (item.id !== id) return item;
-      const next = { ...item, [field]: value } as WardrobeItem;
-      const baseline = baselineItems[id];
-      const isEdited = baseline ? (
-        next.category !== baseline.category ||
-        next.patternType !== baseline.patternType ||
-        next.subcategory !== baseline.subcategory ||
-        next.colorName !== baseline.colorName ||
-        next.colorFamily !== baseline.colorFamily
-      ) : true;
 
       trackEvent('scan_item_edited', {
         item_id: id,
-        fields: [field as 'category' | 'patternType' | 'subcategory' | 'colorName' | 'colorFamily']
+        fields: [editableField]
       });
 
-      return { ...next, isEdited };
+      return applyEditToItem(item, editableField, value as WardrobeItem[typeof editableField], baselineItems[id]);
     }) : prev);
   };
 
 
   const applyFieldToSimilar = <K extends keyof WardrobeItem>(id: string, field: K, value: WardrobeItem[K]) => {
+    if (!detectedItems || !isEditableScanField(field)) return;
+    const editableField = field;
     if (!detectedItems || !['category', 'patternType', 'colorFamily', 'subcategory', 'colorName'].includes(String(field))) return;
     const source = detectedItems.find(i => i.id === id);
     if (!source) return;
 
-    const similarIds = detectedItems
-      .filter(i => i.id !== id && i.subcategory.toLowerCase() === source.subcategory.toLowerCase())
-      .map(i => i.id);
-
-    if (!similarIds.length) return;
-
-    setDetectedItems(prev => prev ? prev.map(item => {
-      if (!similarIds.includes(item.id)) return item;
-      const next = { ...item, [field]: value } as WardrobeItem;
-      const baseline = baselineItems[item.id];
-      const isEdited = baseline ? (
-        next.category !== baseline.category ||
-        next.patternType !== baseline.patternType ||
-        next.subcategory !== baseline.subcategory ||
-        next.colorName !== baseline.colorName ||
-        next.colorFamily !== baseline.colorFamily
-      ) : true;
-      return { ...next, isEdited };
-    }) : prev);
+    setDetectedItems(prev => prev ? applyFieldToSimilarItems(prev, id, editableField, value as WardrobeItem[typeof editableField], baselineItems) : prev);
 
     trackEvent('scan_item_edited', {
       item_id: id,
+      fields: [editableField]
       fields: [field as 'category' | 'patternType' | 'colorFamily' | 'subcategory' | 'colorName']
     });
   };
@@ -387,15 +355,7 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
     if (!baseline) return;
 
     setDetectedItems(prev => prev ? prev.map(item => item.id === id
-      ? {
-          ...item,
-          category: (baseline.category as Category) || item.category,
-          patternType: (baseline.patternType as PatternType) || item.patternType,
-          subcategory: (baseline.subcategory as string) || item.subcategory,
-          colorName: (baseline.colorName as string) || item.colorName,
-          colorFamily: (baseline.colorFamily as string) || item.colorFamily,
-          isEdited: false
-        }
+      ? resetScanItemToBaseline(item, baseline)
       : item) : prev);
   };
 

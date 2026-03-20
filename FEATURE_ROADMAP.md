@@ -327,6 +327,9 @@ This sequence keeps technical risk low while compounding product insight quality
 **Goal:** make regressions harder to ship.
 
 Scope:
+- [x] Add automated tests for analytics storage/export, outfit normalization, and scan edit helpers.
+- [x] Add CI gates for `npm run typecheck`, `npm run build`, and future unit tests.
+- [x] Convert the QA smoke checklist into a PR/release checklist artifact.
 - Add automated tests for analytics storage/export, outfit normalization, and scan edit helpers.
 - Add CI gates for `npm run typecheck`, `npm run build`, and future unit tests.
 - Convert the QA smoke checklist into a PR/release checklist artifact.
@@ -343,6 +346,9 @@ Exit criteria:
 **Goal:** move from local-only observability to portable product analytics.
 
 Scope:
+- [x] Introduce a pluggable analytics transport interface with local-first storage.
+- [x] Add optional remote provider dual-write behind environment flags.
+- [x] Add downloadable JSON/CSV session bundles for QA and stakeholder review.
 - Introduce a pluggable analytics transport interface with local-first storage.
 - Add optional remote provider dual-write behind environment flags.
 - Add downloadable JSON/CSV session bundles for QA and stakeholder review.
@@ -358,6 +364,9 @@ Exit criteria:
 **Goal:** improve AI and agent behavior, not just UI surfaces.
 
 Scope:
+- [x] Centralize prompt/version management for scan analysis, outfit generation, and chat.
+- [x] Add structured evaluation fixtures for “good outfit,” “bad outfit,” and “scan correction needed” cases.
+- [x] Add agent-specific guardrails: deterministic fallbacks and rollback-safe model/config flags.
 - Centralize prompt/version management for scan analysis, outfit generation, and chat.
 - Add structured evaluation fixtures for “good outfit,” “bad outfit,” and “scan correction needed” cases.
 - Add agent-specific guardrails: deterministic fallbacks, prompt diffs in PRs, and rollback-safe model/config flags.
@@ -374,6 +383,9 @@ Exit criteria:
 **Goal:** turn saved/liked/skipped behavior into better recommendations.
 
 Scope:
+- [x] Weight recommendation ranking using `outfit_feedback_given`, saves, unsaves, and current learned preference signals.
+- [x] Add preference memory by persona, occasion, and weather context.
+- [x] Surface “because you liked…” rationale in the stylist UI.
 - Weight recommendation ranking using `outfit_feedback_given`, saves, unsaves, and last-worn recency.
 - Add preference memory by persona, occasion, and weather context.
 - Surface “because you liked…” rationale in the stylist UI.

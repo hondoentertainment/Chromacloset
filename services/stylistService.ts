@@ -1,3 +1,8 @@
+import { Type } from "@google/genai";
+import { WardrobeItem, OutfitRecommendation, WardrobeGap, StylePersona, Category, AgentMode } from "../types.js";
+import { AGENT_MODE_CONFIG, AI_RUNTIME_PROFILE, buildOutfitGenerationPrompt, buildStylingChatSystemInstruction, buildWardrobeGapPrompt } from "./aiConfig.js";
+import { createGeminiClient } from "./aiClient.js";
+import { getWeatherFocus, normalizeOutfits } from "./stylistLogic.js";
 import { GoogleGenAI, Type } from "@google/genai";
 import { WardrobeItem, OutfitRecommendation, WardrobeGap, StylePersona, Category, AgentMode } from "../types";
 
@@ -70,6 +75,7 @@ const buildFallbackOutfits = (
         id: `fallback-${results.length}`,
         title: `${agentMode} ${persona} ${occasion} Look ${results.length + 1}`,
         description: `${top.colorName} ${top.subcategory} paired with ${bottom.colorName} ${bottom.subcategory}.`,
+        stylistTip: `${AGENT_MODE_CONFIG[agentMode].instructions} Lead with balance: anchor the look with a ${top.colorFamily.toLowerCase()} top and build around it for ${occasion.toLowerCase()}.`,
         stylistTip: `${AGENT_MODE_INSTRUCTIONS[agentMode]} Lead with balance: anchor the look with a ${top.colorFamily.toLowerCase()} top and build around it for ${occasion.toLowerCase()}.`,
         itemIds,
         occasion,
@@ -153,6 +159,8 @@ const buildFallbackOutfits = (
         occasion,
         styleVibe: persona,
         weatherFocus,
+        generationSource: 'fallback',
+        generationVersion: AI_RUNTIME_PROFILE.outfitGeneration.promptVersion,
       });
 
       if (results.length === 3) {
@@ -181,6 +189,17 @@ const OUTFIT_SCHEMA = {
   required: ["id", "title", "description", "stylistTip", "itemIds", "occasion", "styleVibe"]
 };
 
+export const getActiveStylistProfile = (agentMode: AgentMode) => ({
+  agentMode,
+  title: AGENT_MODE_CONFIG[agentMode].title,
+  description: AGENT_MODE_CONFIG[agentMode].description,
+  promptVersion: AI_RUNTIME_PROFILE.outfitGeneration.promptVersion,
+  chatPromptVersion: AI_RUNTIME_PROFILE.stylistChat.promptVersion,
+  generationModel: AI_RUNTIME_PROFILE.outfitGeneration.model,
+  chatModel: AI_RUNTIME_PROFILE.stylistChat.model,
+  timeoutMs: AI_RUNTIME_PROFILE.outfitGeneration.timeoutMs,
+  fallbackStrategy: 'deterministic_capsule_builder',
+});
 const normalizeOutfits = (raw: OutfitRecommendation[], items: WardrobeItem[], weather?: string): OutfitRecommendation[] => {
   const byId = new Map(items.map(i => [i.id, i]));
   const seenSignatures = new Set<string>();
@@ -235,7 +254,7 @@ export const generateOutfits = async (
 ): Promise<OutfitRecommendation[]> => {
   if (items.length < 2) return [];
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = createGeminiClient();
 
   const itemManifest = items.map(i => ({
     id: i.id,
@@ -243,13 +262,18 @@ export const generateOutfits = async (
     family: i.colorFamily
   }));
 
-  const weatherContext = weather ? `The current weather is ${weather}.` : "";
-
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: AI_RUNTIME_PROFILE.outfitGeneration.model,
       contents: {
         parts: [{
+          text: buildOutfitGenerationPrompt({
+            persona,
+            agentMode,
+            occasion,
+            weather,
+            itemManifest,
+          })
           text: `You are a high-end fashion concierge. The user's style persona is "${persona}".
           The active styling agent mode is "${agentMode}". ${AGENT_MODE_INSTRUCTIONS[agentMode]}
           Using ONLY these wardrobe items: ${JSON.stringify(itemManifest)}, curate 3 outfits for "${occasion}".
@@ -270,11 +294,21 @@ export const generateOutfits = async (
     });
 
     const parsed = JSON.parse(response.text || "[]") as OutfitRecommendation[];
+    const normalized = normalizeOutfits(parsed, items, weather).map((outfit) => ({
+      ...outfit,
+      generationSource: 'model' as const,
+      generationVersion: AI_RUNTIME_PROFILE.outfitGeneration.promptVersion,
+    }));
     const normalized = normalizeOutfits(parsed, items, weather);
     return normalized.length > 0 ? normalized : buildFallbackOutfits(items, occasion, persona, weather, agentMode);
   } catch (error) {
     console.error("Stylist Error:", error);
     return buildFallbackOutfits(items, occasion, persona, weather, agentMode);
+  }
+};
+
+export const createStylingChat = (items: WardrobeItem[], persona: StylePersona, agentMode: AgentMode = 'Balanced') => {
+  const ai = createGeminiClient();
     return normalized.length > 0 ? normalized : buildFallbackOutfits(items, occasion, persona, weather);
   } catch (error) {
     console.error("Stylist Error:", error);
@@ -288,8 +322,9 @@ export const createStylingChat = (items: WardrobeItem[], persona: StylePersona, 
   const itemManifest = items.map(i => `${i.colorName} ${i.subcategory}`).join(", ");
 
   return ai.chats.create({
-    model: 'gemini-3-pro-preview',
+    model: AI_RUNTIME_PROFILE.stylistChat.model,
     config: {
+      systemInstruction: buildStylingChatSystemInstruction(items, persona, agentMode)
       systemInstruction: `You are the Chromacloset Style Concierge. The user has these items: ${itemManifest}.
       Their style persona is ${persona}. The active styling agent mode is ${agentMode}: ${AGENT_MODE_INSTRUCTIONS[agentMode]}
       Help them with specific styling questions, outfit advice, and mixing colors.
@@ -298,11 +333,10 @@ export const createStylingChat = (items: WardrobeItem[], persona: StylePersona, 
   });
 };
 
-// Ensure GoogleGenAI instance is fresh for search grounding requests.
 export const searchForGapItems = async (gap: WardrobeGap) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = createGeminiClient();
   const response = await ai.models.generateContent({
-    model: "gemini-3-pro-preview",
+    model: AI_RUNTIME_PROFILE.shoppingSearch.model,
     contents: `Find shopping recommendations for a ${gap.suggestedColor} ${gap.itemType}. Focus on brands like Everlane, Uniqlo, or high-quality basics.`,
     config: {
       tools: [{ googleSearch: {} }]
@@ -316,11 +350,10 @@ export const searchForGapItems = async (gap: WardrobeGap) => {
   };
 };
 
-// Ensure GoogleGenAI instance is fresh for wardrobe analysis.
 export const analyzeWardrobeGaps = async (items: WardrobeItem[]): Promise<WardrobeGap[]> => {
   if (items.length === 0) return [];
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = createGeminiClient();
   const itemManifest = items.map(i => ({
     category: i.category,
     type: i.subcategory,
@@ -330,10 +363,10 @@ export const analyzeWardrobeGaps = async (items: WardrobeItem[]): Promise<Wardro
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: AI_RUNTIME_PROFILE.wardrobeGaps.model,
       contents: {
         parts: [{
-          text: `Closet data: ${JSON.stringify(itemManifest)}. Identify 3 missing versatile basics that would enhance this specific collection.`
+          text: buildWardrobeGapPrompt(itemManifest)
         }]
       },
       config: {
@@ -346,7 +379,7 @@ export const analyzeWardrobeGaps = async (items: WardrobeItem[]): Promise<Wardro
               itemType: { type: Type.STRING },
               suggestedColor: { type: Type.STRING },
               reasoning: { type: Type.STRING },
-              priority: { type: Type.STRING, enum: ['high', 'medium', 'low'] }
+              priority: { type: Type.STRING }
             },
             required: ["itemType", "suggestedColor", "reasoning", "priority"]
           }
@@ -354,8 +387,9 @@ export const analyzeWardrobeGaps = async (items: WardrobeItem[]): Promise<Wardro
       }
     });
 
-    return JSON.parse(response.text || "[]");
+    return JSON.parse(response.text || '[]') as WardrobeGap[];
   } catch (error) {
+    console.error('Wardrobe gap analysis error:', error);
     return [];
   }
 };

@@ -1,18 +1,21 @@
 
 import React, { useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
-import { WardrobeItem, ScanResult } from '../types';
+import { WardrobeItem, ScanResult, OutfitRecommendation } from '../types';
 import { generateClosetIcon } from '../services/geminiService';
 import { analyzeWardrobeGaps } from '../services/stylistService';
 import { trackEvent } from '../services/analyticsService';
+import { buildProductionReadinessSnapshot } from '../services/productionReadinessService';
 
 interface DashboardProps {
   items: WardrobeItem[];
   scans: ScanResult[];
+  savedOutfits: OutfitRecommendation[];
   onDeleteScan: (timestamp: number) => void;
   totalScannedCount: number;
   closetIcon: string | null;
   onIconUpdate: (iconUrl: string) => void;
+  showInternalInsights?: boolean;
 }
 
 const STYLE_VIBES = [
@@ -24,7 +27,7 @@ const STYLE_VIBES = [
 ];
 
 export const Dashboard: React.FC<DashboardProps> = ({ 
-  items, scans, onDeleteScan, totalScannedCount, closetIcon, onIconUpdate 
+  items, scans, savedOutfits, onDeleteScan, totalScannedCount, closetIcon, onIconUpdate, showInternalInsights = false
 }) => {
   const [isStudioOpen, setIsStudioOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -42,6 +45,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
       return [];
     }
   }, []);
+
+
 
   const stats = useMemo(() => {
     const total = items.length;
@@ -92,6 +97,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
       categoryData: Object.entries(categoryCounts).map(([name, value]) => ({ name, value }))
     };
   }, [items, savedOutfits]);
+
+  const productionSnapshot = useMemo(() => buildProductionReadinessSnapshot(items, scans, savedOutfits), [items, scans, savedOutfits]);
 
   const handleGenerateInStudio = async () => {
     setIsGenerating(true);
@@ -284,6 +291,91 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {showInternalInsights && (
+      <section className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-6">
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+          <div>
+            <p className="text-[10px] font-black text-indigo-500 uppercase tracking-[0.22em]">Multi-agent production center</p>
+            <h3 className="mt-2 text-2xl font-black text-slate-900">Five production agents driving the next roadmap phases.</h3>
+            <p className="mt-2 max-w-3xl text-sm text-slate-500">This command center turns the next five VC-priority phases into visible, testable product systems: ingestion, planning, memory, gap prioritization, and sync readiness.</p>
+          </div>
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-600">Sync readiness</p>
+            <p className="mt-2 text-xl font-black text-slate-900">{productionSnapshot.syncSummary.syncReadinessScore}/100</p>
+            <p className="text-xs text-slate-500">{productionSnapshot.syncSummary.items} items · {productionSnapshot.syncSummary.scans} scans · {productionSnapshot.syncSummary.savedLooks} saved looks</p>
+          </div>
+        </div>
+
+        <div className="grid md:grid-cols-2 xl:grid-cols-5 gap-4">
+          {productionSnapshot.agentCards.map((agent) => (
+            <div key={agent.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-4 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{agent.phase}</p>
+                  <h4 className="text-sm font-bold text-slate-900">{agent.title}</h4>
+                </div>
+                <span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase ${agent.status === 'ready' ? 'bg-emerald-100 text-emerald-700' : agent.status === 'needs_attention' ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600'}`}>
+                  {agent.status.replace('_', ' ')}
+                </span>
+              </div>
+              <p className="text-sm font-semibold text-slate-900">{agent.headline}</p>
+              <p className="text-xs text-slate-500 leading-relaxed">{agent.detail}</p>
+              <p className="text-[11px] text-indigo-600 font-semibold">{agent.testingNote}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid lg:grid-cols-[1.3fr,0.9fr,0.8fr] gap-4">
+          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Planner agent</p>
+            <h4 className="mt-2 text-lg font-bold text-slate-900">Weekly plan preview</h4>
+            <div className="mt-4 space-y-3">
+              {productionSnapshot.weeklyPlan.map((entry) => (
+                <div key={entry.dayLabel} className="flex items-start justify-between gap-3 rounded-xl bg-white border border-slate-100 px-3 py-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{entry.dayLabel}</p>
+                    <p className="mt-1 text-sm font-bold text-slate-900">{entry.title}</p>
+                  </div>
+                  <p className="max-w-[14rem] text-right text-xs text-slate-500">{entry.note}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Ingestion agent</p>
+            <h4 className="mt-2 text-lg font-bold text-slate-900">Duplicate review queue</h4>
+            <div className="mt-4 space-y-3">
+              {productionSnapshot.duplicateCandidates.length > 0 ? productionSnapshot.duplicateCandidates.slice(0, 3).map((candidate) => (
+                <div key={`${candidate.sourceId}-${candidate.duplicateId}`} className="rounded-xl bg-white border border-slate-100 px-3 py-3">
+                  <p className="text-sm font-bold text-slate-900">{candidate.sourceId} ↔ {candidate.duplicateId}</p>
+                  <p className="mt-1 text-xs text-slate-500">{candidate.reason}</p>
+                </div>
+              )) : (
+                <p className="text-sm text-slate-500">No likely duplicates detected in the current wardrobe graph.</p>
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-5">
+            <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">Gap agent</p>
+            <h4 className="mt-2 text-lg font-bold text-slate-900">Local priority gap</h4>
+            {productionSnapshot.prioritizedGaps[0] ? (
+              <div className="mt-4 space-y-3">
+                <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-black uppercase ${productionSnapshot.prioritizedGaps[0].priority === 'high' ? 'bg-rose-100 text-rose-700' : productionSnapshot.prioritizedGaps[0].priority === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                  {productionSnapshot.prioritizedGaps[0].priority} priority
+                </span>
+                <p className="text-sm font-bold text-slate-900">{productionSnapshot.prioritizedGaps[0].suggestedColor} {productionSnapshot.prioritizedGaps[0].itemType}</p>
+                <p className="text-xs text-slate-500">{productionSnapshot.prioritizedGaps[0].reasoning}</p>
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-slate-500">No local gap identified yet.</p>
+            )}
+          </div>
+        </div>
+      </section>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

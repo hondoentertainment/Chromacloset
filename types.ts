@@ -55,6 +55,10 @@ export interface OutfitRecommendation {
   lastWorn?: number;
   userNotes?: string;
   outfitFeedback?: "love" | "skip";
+  generationSource?: "model" | "fallback";
+  generationVersion?: string;
+  personalizationScore?: number;
+  recommendedBecause?: string;
 }
 
 export interface WardrobeGap {

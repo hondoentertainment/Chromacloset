@@ -1,11 +1,15 @@
 
 import React, { useState, useEffect, useRef } from 'react';
+import { generateOutfits, analyzeWardrobeGaps, searchForGapItems, createStylingChat, getActiveStylistProfile } from '../services/stylistService';
 import { generateOutfits, analyzeWardrobeGaps, searchForGapItems, createStylingChat } from '../services/stylistService';
 import { WardrobeItem, OutfitRecommendation, WardrobeGap, StylePersona, ChatMessage, AgentMode } from '../types';
 import { trackEvent } from '../services/analyticsService';
+import { buildPreferenceMemory, getStyleBriefSuggestion, rerankOutfitsWithPreferences } from '../services/personalizationService';
 
 interface StylistModuleProps {
   items: WardrobeItem[];
+  savedOutfits: OutfitRecommendation[];
+  onSavedOutfitsChange: React.Dispatch<React.SetStateAction<OutfitRecommendation[]>>;
 }
 
 const PERSONAS: StylePersona[] = ['Minimalist', 'Streetwear', 'Classic Professional', 'Bohemian', 'Quiet Luxury', 'Bold & Eclectic'];
@@ -48,6 +52,18 @@ const OutfitCard: React.FC<OutfitCardProps> = ({
         <div>
           <span className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">{outfit.styleVibe}</span>
           <h3 className="text-xl font-bold text-slate-900 mt-1">{outfit.title}</h3>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {outfit.generationSource && (
+              <span className={`inline-flex items-center rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.18em] ${outfit.generationSource === 'fallback' ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                {outfit.generationSource === 'fallback' ? 'Fallback plan' : 'AI generated'}
+              </span>
+            )}
+            {outfit.generationVersion && (
+              <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-slate-500">
+                {outfit.generationVersion}
+              </span>
+            )}
+          </div>
           {isSavedView && outfit.dateSaved && (
             <p className="text-[10px] text-slate-400 font-bold uppercase mt-1">Saved {new Date(outfit.dateSaved).toLocaleDateString()}</p>
           )}
@@ -84,6 +100,13 @@ const OutfitCard: React.FC<OutfitCardProps> = ({
           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Concierge Tip</p>
           <p className="text-xs text-slate-600 italic leading-relaxed">{outfit.stylistTip}</p>
         </div>
+
+        {outfit.recommendedBecause && (
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+            <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-2">Why this is ranked highly</p>
+            <p className="text-xs text-emerald-800 leading-relaxed">{outfit.recommendedBecause}</p>
+          </div>
+        )}
 
         <div className="space-y-2">
           {outfit.itemIds.map(id => {
@@ -167,15 +190,11 @@ const OutfitCard: React.FC<OutfitCardProps> = ({
   );
 };
 
-export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
+export const StylistModule: React.FC<StylistModuleProps> = ({ items, savedOutfits, onSavedOutfitsChange }) => {
   const [occasion, setOccasion] = useState('Casual Weekend');
   const [persona, setPersona] = useState<StylePersona>('Minimalist');
   const [agentMode, setAgentMode] = useState<AgentMode>('Balanced');
   const [outfits, setOutfits] = useState<OutfitRecommendation[]>([]);
-  const [savedOutfits, setSavedOutfits] = useState<OutfitRecommendation[]>(() => {
-    const saved = localStorage.getItem('chromacloset_saved_outfits');
-    return saved ? JSON.parse(saved) : [];
-  });
   const [gaps, setGaps] = useState<WardrobeGap[]>([]);
   const [loading, setLoading] = useState(false);
   const [gapLoading, setGapLoading] = useState(false);
@@ -211,8 +230,18 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
   }, [loading]);
 
   useEffect(() => {
-    localStorage.setItem('chromacloset_saved_outfits', JSON.stringify(savedOutfits));
-  }, [savedOutfits]);
+    if (!loading) {
+      setLoadingHint(null);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setLoadingHint('Still curating looks — Gemini is taking longer than usual. You can keep waiting or retry.');
+    }, 6000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [loading]);
+
 
   useEffect(() => {
     if (isChatOpen && !chatSessionRef.current) {
@@ -280,6 +309,8 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
     try {
       const result = await Promise.race([
         generateOutfits(items, occasion, persona, weather || undefined, agentMode),
+        new Promise<never>((_, reject) => {
+          window.setTimeout(() => reject(new Error('timeout')), activeProfile.timeoutMs);
         generateOutfits(items, occasion, persona, weather || undefined),
         new Promise<never>((_, reject) => {
           window.setTimeout(() => reject(new Error('timeout')), 15000);
@@ -292,6 +323,8 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
         return;
       }
 
+      const ranked = rerankOutfitsWithPreferences(result, savedOutfits, items, { persona, occasion, weather });
+      setOutfits(ranked);
       setOutfits(result);
       trackEvent('outfits_generated', { count: result.length });
       setGenerationError(null);
@@ -312,26 +345,26 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
   const toggleSaveOutfit = (outfit: OutfitRecommendation) => {
     const isAlreadySaved = savedOutfits.some(o => o.id === outfit.id);
     if (isAlreadySaved) {
-      setSavedOutfits(prev => prev.filter(o => o.id !== outfit.id));
+      onSavedOutfitsChange(prev => prev.filter(o => o.id !== outfit.id));
       trackEvent('outfit_unsaved', { outfit_id: outfit.id });
       showToast("Removed from Lookbook");
     } else {
       const newOutfit = { ...outfit, isSaved: true, dateSaved: Date.now() };
-      setSavedOutfits(prev => [newOutfit, ...prev]);
+      onSavedOutfitsChange(prev => [newOutfit, ...prev]);
       trackEvent('outfit_saved', { outfit_id: outfit.id });
       showToast("Added to Lookbook ✨");
     }
   };
 
   const updateOutfitUsage = (id: string) => {
-    setSavedOutfits(prev => prev.map(o => 
+    onSavedOutfitsChange(prev => prev.map(o =>
       o.id === id ? { ...o, lastWorn: Date.now() } : o
     ));
     showToast("Outfit marked as worn today!");
   };
 
   const updateOutfitNotes = (id: string, notes: string) => {
-    setSavedOutfits(prev => prev.map(o => 
+    onSavedOutfitsChange(prev => prev.map(o =>
       o.id === id ? { ...o, userNotes: notes } : o
     ));
   };
@@ -339,12 +372,15 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
 
   const setOutfitFeedback = (id: string, feedback: 'love' | 'skip', source: 'curator' | 'lookbook') => {
     setOutfits(prev => prev.map(o => o.id === id ? { ...o, outfitFeedback: feedback } : o));
-    setSavedOutfits(prev => prev.map(o => o.id === id ? { ...o, outfitFeedback: feedback } : o));
+    onSavedOutfitsChange(prev => prev.map(o => o.id === id ? { ...o, outfitFeedback: feedback } : o));
     trackEvent('outfit_feedback_given', { outfit_id: id, feedback, source });
     showToast(feedback === 'love' ? 'Preference saved: Love this look' : 'Preference saved: Skip this look');
   };
 
   const getItemById = (id: string) => items.find(i => i.id === id);
+  const activeProfile = getActiveStylistProfile(agentMode);
+  const preferenceMemory = buildPreferenceMemory(savedOutfits, items);
+  const learnedBrief = getStyleBriefSuggestion(preferenceMemory);
 
   return (
     <div className="py-12 max-w-6xl mx-auto space-y-12 px-4 animate-in fade-in duration-700 relative">
@@ -367,6 +403,10 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
               { label: 'Saved looks', value: savedOutfits.length },
               { label: 'Persona', value: persona },
               { label: 'Agent mode', value: agentMode },
+              { label: 'Prompt version', value: activeProfile.promptVersion },
+              { label: 'Top signal', value: preferenceMemory.topColorFamilies[0] || 'Learning' },
+              { label: 'Fallback path', value: activeProfile.fallbackStrategy },
+              { label: 'Loved looks', value: preferenceMemory.lovedOutfitCount },
               { label: 'Occasion', value: occasion },
             ].map((card) => (
               <div key={card.label} className="rounded-2xl border border-white/10 bg-slate-900/50 px-4 py-3">
@@ -416,6 +456,7 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
             <div>
               <h4 className="font-bold text-slate-900">Style Consultant</h4>
               <p className="text-[10px] text-indigo-500 font-bold uppercase">Persona: {persona}</p>
+              <p className="text-[10px] text-slate-400 font-semibold uppercase mt-1">{activeProfile.chatPromptVersion} · {activeProfile.chatModel}</p>
             </div>
             <button onClick={() => setIsChatOpen(false)} className="p-2 hover:bg-slate-50 rounded-full">
               <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -567,6 +608,34 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items }) => {
                 <p className="mt-2 text-sm font-semibold text-slate-900">{agentMode} mode • {persona}</p>
                 <p className="mt-2 text-xs leading-relaxed text-slate-500">
                   {AGENT_MODES.find((agent) => agent.mode === agentMode)?.desc}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.22em] text-emerald-600">Preference memory</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-900">{preferenceMemory.topColorFamilies.length ? preferenceMemory.topColorFamilies.join(' • ') : 'Building your profile...'}</p>
+                  </div>
+                  {learnedBrief.persona && (
+                    <button
+                      onClick={() => {
+                        if (learnedBrief.persona) setPersona(learnedBrief.persona);
+                        if (learnedBrief.occasion) setOccasion(learnedBrief.occasion);
+                        if (learnedBrief.weather) setWeather(learnedBrief.weather);
+                        showToast('Applied learned style brief');
+                      }}
+                      className="rounded-xl bg-emerald-600 px-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-white hover:bg-emerald-700"
+                    >
+                      Use learned brief
+                    </button>
+                  )}
+                </div>
+                <p className="text-xs text-slate-600">
+                  Favorite persona: <span className="font-semibold">{preferenceMemory.favoritePersona || 'Learning'}</span> · Favorite occasion: <span className="font-semibold">{preferenceMemory.favoriteOccasion || 'Learning'}</span>
+                </p>
+                <p className="text-xs text-slate-500">
+                  Signals: {preferenceMemory.lovedOutfitCount} loved · {preferenceMemory.skippedOutfitCount} skipped · Top category {preferenceMemory.topCategories[0]?.category || 'pending'}
                 </p>
               </div>
 

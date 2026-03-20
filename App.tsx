@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { ScanModule } from './components/ScanModule';
@@ -6,47 +5,20 @@ import { Dashboard } from './components/Dashboard';
 import { ColorExplorer } from './components/ColorExplorer';
 import { StylistModule } from './components/StylistModule';
 import { AnalyticsDebugPanel } from './components/AnalyticsDebugPanel';
-import { WardrobeItem, ScanResult } from './types';
+import { WardrobeItem, ScanResult, OutfitRecommendation } from './types';
 import type { ScanTelemetry } from './components/ScanModule';
 import { trackEvent } from './services/analyticsService';
+import { clearClosetStorage, loadPersistedClosetState, loadSavedOutfits, savePersistedClosetState, saveSavedOutfits } from './services/storageService';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'scan' | 'explorer' | 'stylist'>('dashboard');
-  
-  // Persisted items
-  const [items, setItems] = useState<WardrobeItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('chromacloset_items');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
-  });
+  const [persistedState] = useState(() => loadPersistedClosetState());
 
-  // Persisted scan history
-  const [scans, setScans] = useState<ScanResult[]>(() => {
-    try {
-      const saved = localStorage.getItem('chromacloset_scans');
-      return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-      return [];
-    }
-  });
-
-  // Cumulative total scanned count (Lifetime)
-  const [totalScannedCount, setTotalScannedCount] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem('chromacloset_total_scanned');
-      return saved ? parseInt(saved, 10) : 0;
-    } catch (e) {
-      return 0;
-    }
-  });
-
-  // Global Brand Icon
-  const [closetIcon, setClosetIcon] = useState<string | null>(() => {
-    return localStorage.getItem('chromacloset_brand_icon');
-  });
+  const [items, setItems] = useState<WardrobeItem[]>(persistedState.items);
+  const [scans, setScans] = useState<ScanResult[]>(persistedState.scans);
+  const [totalScannedCount, setTotalScannedCount] = useState<number>(persistedState.totalScannedCount);
+  const [closetIcon, setClosetIcon] = useState<string | null>(persistedState.closetIcon);
+  const [savedOutfits, setSavedOutfits] = useState<OutfitRecommendation[]>(() => loadSavedOutfits());
 
   useEffect(() => {
     trackEvent('app_opened', { source: 'browser' });
@@ -54,16 +26,24 @@ const App: React.FC = () => {
 
   useEffect(() => {
     try {
-      localStorage.setItem('chromacloset_items', JSON.stringify(items));
-      localStorage.setItem('chromacloset_scans', JSON.stringify(scans));
-      localStorage.setItem('chromacloset_total_scanned', totalScannedCount.toString());
-      if (closetIcon) {
-        localStorage.setItem('chromacloset_brand_icon', closetIcon);
-      }
+      savePersistedClosetState({
+        items,
+        scans,
+        totalScannedCount,
+        closetIcon,
+      });
     } catch (e) {
-      console.warn("Storage quota warning", e);
+      console.warn('Storage quota warning', e);
     }
   }, [items, scans, totalScannedCount, closetIcon]);
+
+  useEffect(() => {
+    try {
+      saveSavedOutfits(savedOutfits);
+    } catch (e) {
+      console.warn('Unable to persist saved outfits', e);
+    }
+  }, [savedOutfits]);
 
   const handleScanComplete = (newItems: WardrobeItem[], telemetry?: ScanTelemetry) => {
     setItems(prev => [...prev, ...newItems]);
@@ -76,6 +56,7 @@ const App: React.FC = () => {
         latency_ms: telemetry.latencyMs,
       });
     }
+
     
     const newScan: ScanResult = {
       items: newItems,
@@ -98,13 +79,14 @@ const App: React.FC = () => {
   };
 
   const clearCloset = () => {
-    if (confirm("Are you sure you want to clear your entire inventory? This cannot be undone.")) {
+    if (confirm('Are you sure you want to clear your entire inventory? This cannot be undone.')) {
       trackEvent('closet_reset', { items_before_reset: items.length, scans_before_reset: scans.length });
       setItems([]);
       setScans([]);
+      setSavedOutfits([]);
       setTotalScannedCount(0);
       setClosetIcon(null);
-      localStorage.clear();
+      clearClosetStorage();
     }
   };
 
@@ -118,6 +100,7 @@ const App: React.FC = () => {
   const shellStats = [
     { label: 'Live inventory', value: items.length, icon: 'Closet' },
     { label: 'Lifetime scans', value: totalScannedCount, icon: 'Scans' },
+    { label: 'Saved looks', value: savedOutfits.length, icon: 'Looks' },
     { label: 'Active workspace', value: activeTab.charAt(0).toUpperCase() + activeTab.slice(1), icon: 'View' },
   ];
 
@@ -128,6 +111,14 @@ const App: React.FC = () => {
         <div className="absolute top-1/3 -left-20 h-72 w-72 rounded-full bg-fuchsia-500/10 blur-3xl" />
         <div className="absolute bottom-0 right-0 h-96 w-96 rounded-full bg-cyan-400/10 blur-3xl" />
       </div>
+      <Header
+        activeTab={activeTab}
+        setActiveTab={handleTabChange}
+        closetIcon={closetIcon}
+        itemsCount={items.length}
+        totalScannedCount={totalScannedCount}
+      />
+
       <Header 
         activeTab={activeTab} 
         setActiveTab={handleTabChange} 
@@ -187,6 +178,7 @@ const App: React.FC = () => {
           <>
             {(items.length > 0 || totalScannedCount > 0) && (
               <div className="flex justify-end pt-4 -mb-2">
+                <button
                 <button 
                   onClick={clearCloset}
                   className="text-xs text-slate-400 hover:text-red-300 font-medium transition-colors"
@@ -195,27 +187,29 @@ const App: React.FC = () => {
                 </button>
               </div>
             )}
-            <Dashboard 
-              items={items} 
-              scans={scans} 
-              onDeleteScan={deleteScan} 
+            <Dashboard
+              items={items}
+              scans={scans}
+              savedOutfits={savedOutfits}
+              onDeleteScan={deleteScan}
               totalScannedCount={totalScannedCount}
               closetIcon={closetIcon}
               onIconUpdate={setClosetIcon}
+              showInternalInsights={import.meta.env.DEV}
             />
           </>
         )}
-        
+
         {activeTab === 'scan' && (
           <ScanModule onScanComplete={handleScanComplete} />
         )}
-        
+
         {activeTab === 'explorer' && (
           <ColorExplorer items={items} />
         )}
 
         {activeTab === 'stylist' && (
-          <StylistModule items={items} />
+          <StylistModule items={items} savedOutfits={savedOutfits} onSavedOutfitsChange={setSavedOutfits} />
         )}
 
         {items.length === 0 && activeTab === 'dashboard' && (
@@ -252,6 +246,7 @@ const App: React.FC = () => {
           </div>
         )}
       </main>
+
       
       <footer className="py-12 text-center text-slate-500 text-sm relative">
         <p>&copy; 2026 Chromacloset Wardrobe Intelligence</p>
