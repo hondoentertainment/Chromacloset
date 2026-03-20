@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { generateOutfits, analyzeWardrobeGaps, searchForGapItems, createStylingChat, getActiveStylistProfile } from '../services/stylistService';
+import { generateOutfits, analyzeWardrobeGaps, searchForGapItems, createStylingChat } from '../services/stylistService';
 import { WardrobeItem, OutfitRecommendation, WardrobeGap, StylePersona, ChatMessage, AgentMode } from '../types';
 import { trackEvent } from '../services/analyticsService';
 import { buildPreferenceMemory, getStyleBriefSuggestion, rerankOutfitsWithPreferences } from '../services/personalizationService';
@@ -228,6 +229,19 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items, savedOutfit
     return () => window.clearTimeout(timeoutId);
   }, [loading]);
 
+  useEffect(() => {
+    if (!loading) {
+      setLoadingHint(null);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setLoadingHint('Still curating looks — Gemini is taking longer than usual. You can keep waiting or retry.');
+    }, 6000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [loading]);
+
 
   useEffect(() => {
     if (isChatOpen && !chatSessionRef.current) {
@@ -297,6 +311,9 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items, savedOutfit
         generateOutfits(items, occasion, persona, weather || undefined, agentMode),
         new Promise<never>((_, reject) => {
           window.setTimeout(() => reject(new Error('timeout')), activeProfile.timeoutMs);
+        generateOutfits(items, occasion, persona, weather || undefined),
+        new Promise<never>((_, reject) => {
+          window.setTimeout(() => reject(new Error('timeout')), 15000);
         })
       ]);
 
@@ -308,6 +325,7 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items, savedOutfit
 
       const ranked = rerankOutfitsWithPreferences(result, savedOutfits, items, { persona, occasion, weather });
       setOutfits(ranked);
+      setOutfits(result);
       trackEvent('outfits_generated', { count: result.length });
       setGenerationError(null);
     } catch (error) {
@@ -389,6 +407,7 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items, savedOutfit
               { label: 'Top signal', value: preferenceMemory.topColorFamilies[0] || 'Learning' },
               { label: 'Fallback path', value: activeProfile.fallbackStrategy },
               { label: 'Loved looks', value: preferenceMemory.lovedOutfitCount },
+              { label: 'Occasion', value: occasion },
             ].map((card) => (
               <div key={card.label} className="rounded-2xl border border-white/10 bg-slate-900/50 px-4 py-3">
                 <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{card.label}</p>

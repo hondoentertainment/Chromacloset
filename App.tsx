@@ -57,6 +57,7 @@ const App: React.FC = () => {
       });
     }
 
+    
     const newScan: ScanResult = {
       items: newItems,
       timestamp: Date.now()
@@ -100,6 +101,7 @@ const App: React.FC = () => {
     { label: 'Live inventory', value: items.length, icon: 'Closet' },
     { label: 'Lifetime scans', value: totalScannedCount, icon: 'Scans' },
     { label: 'Saved looks', value: savedOutfits.length, icon: 'Looks' },
+    { label: 'Active workspace', value: activeTab.charAt(0).toUpperCase() + activeTab.slice(1), icon: 'View' },
   ];
 
   return (
@@ -117,6 +119,14 @@ const App: React.FC = () => {
         totalScannedCount={totalScannedCount}
       />
 
+      <Header 
+        activeTab={activeTab} 
+        setActiveTab={handleTabChange} 
+        closetIcon={closetIcon} 
+        itemsCount={items.length}
+        totalScannedCount={totalScannedCount}
+      />
+      
       <main className="max-w-7xl mx-auto px-4 pb-20 relative">
         <section className="pt-8 pb-4">
           <div className="rounded-[2rem] border border-white/10 bg-white/5 backdrop-blur-2xl shadow-[0_30px_120px_rgba(15,23,42,0.45)] overflow-hidden">
@@ -169,6 +179,7 @@ const App: React.FC = () => {
             {(items.length > 0 || totalScannedCount > 0) && (
               <div className="flex justify-end pt-4 -mb-2">
                 <button
+                <button 
                   onClick={clearCloset}
                   className="text-xs text-slate-400 hover:text-red-300 font-medium transition-colors"
                 >
@@ -236,6 +247,7 @@ const App: React.FC = () => {
         )}
       </main>
 
+      
       <footer className="py-12 text-center text-slate-500 text-sm relative">
         <p>&copy; 2026 Chromacloset Wardrobe Intelligence</p>
       </footer>

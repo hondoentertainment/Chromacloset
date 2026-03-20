@@ -36,6 +36,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [isGapLoading, setIsGapLoading] = useState(false);
   const [gapSuggestion, setGapSuggestion] = useState<{ itemType: string; suggestedColor: string; reasoning: string; priority: 'high' | 'medium' | 'low' } | null>(null);
   const [gapError, setGapError] = useState<string | null>(null);
+  const savedOutfits = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('chromacloset_saved_outfits');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, []);
 
 
 

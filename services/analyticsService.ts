@@ -86,6 +86,15 @@ export interface AnalyticsTransport {
   enabled: boolean;
   send: (event: AnalyticsEvent) => void | Promise<void>;
 }
+export const trackEvent = <T extends AnalyticsEventName>(name: T, payload: AnalyticsEventPayloadMap[T]) => {
+  const event: AnalyticsEvent<T> = {
+    name,
+    payload: {
+      ...payload,
+      schema_version: SCHEMA_VERSION,
+    },
+    timestamp: new Date().toISOString(),
+  };
 
 const canUseStorage = (): boolean => typeof window !== 'undefined' && typeof localStorage !== 'undefined';
 
@@ -121,6 +130,24 @@ export const hydrateAnalyticsEvents = (raw: string | null): AnalyticsEvent[] => 
 };
 
 const writeStoredEvents = (storageKey: string, events: AnalyticsEvent[]) => {
+export const exportTrackedEvents = (format: 'json' | 'csv' = 'json'): string => {
+  const events = getTrackedEvents();
+
+  if (format === 'json') {
+    return JSON.stringify(events, null, 2);
+  }
+
+  const headers = ['timestamp', 'name', 'schema_version', 'payload'];
+  const rows = events.map((event) => {
+    const schemaVersion = event.payload?.schema_version ?? '';
+    const payload = JSON.stringify(event.payload).replace(/"/g, '""');
+    return `"${event.timestamp}","${event.name}","${schemaVersion}","${payload}"`;
+  });
+
+  return [headers.join(','), ...rows].join('\n');
+};
+
+export const clearTrackedEvents = () => {
   if (!canUseStorage()) return;
   localStorage.setItem(storageKey, JSON.stringify(events.slice(0, MAX_EVENTS)));
 };
