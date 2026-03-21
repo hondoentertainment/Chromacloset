@@ -6,7 +6,6 @@ import {
   exportTrackedEvents,
   getTrackedEvents,
 } from '../services/analyticsService';
-import { clearTrackedEvents, exportTrackedEvents, getTrackedEvents } from '../services/analyticsService';
 
 const MAX_SHOWN = 50;
 
@@ -170,44 +169,6 @@ export const AnalyticsDebugPanel: React.FC = () => {
             {statusMessage && (
               <p className="text-[10px] text-slate-400">{statusMessage}</p>
             )}
-          <div className="px-4 py-2 border-b border-slate-800 flex items-center gap-2">
-            <select
-              value={selectedEvent}
-              onChange={(e) => setSelectedEvent(e.target.value)}
-              className="flex-1 text-xs bg-slate-900 border border-slate-700 rounded-md px-2 py-1"
-            >
-              <option value="all">All events</option>
-              {eventNames.map((name) => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
-            <button
-              onClick={() => setRefreshTick(t => t + 1)}
-              className="text-xs px-2 py-1 rounded-md bg-indigo-600 hover:bg-indigo-500"
-            >
-              Refresh
-            </button>
-            <button
-              onClick={() => {
-                clearTrackedEvents();
-                setRefreshTick(t => t + 1);
-              }}
-              className="text-xs px-2 py-1 rounded-md bg-rose-700 hover:bg-rose-600"
-            >
-              Clear
-            </button>
-            <button
-              onClick={() => handleExport('json')}
-              className="text-xs px-2 py-1 rounded-md bg-slate-800 hover:bg-slate-700"
-            >
-              Copy JSON
-            </button>
-            <button
-              onClick={() => handleExport('csv')}
-              className="text-xs px-2 py-1 rounded-md bg-slate-800 hover:bg-slate-700"
-            >
-              Copy CSV
-            </button>
           </div>
 
           <div className="overflow-y-auto max-h-[42vh] divide-y divide-slate-800">
