@@ -4,6 +4,7 @@ import { analyzeClosetImage, processQRCode } from '../services/geminiService';
 import { WardrobeItem, Category, PatternType, BoundingBox } from '../types';
 import { trackEvent } from '../services/analyticsService';
 import { applyEditToItem, applyFieldToSimilarItems, buildScanReviewSummary, createBaselineItems, isEditableScanField, resetItemToBaseline as resetScanItemToBaseline, sortScanReviewItems } from '../services/scanReviewService.js';
+import { applyEditToItem, applyFieldToSimilarItems, createBaselineItems, isEditableScanField, resetItemToBaseline as resetScanItemToBaseline } from '../services/scanReviewService.js';
 
 export type ScanMode = 'cloth' | 'qr';
 
@@ -182,6 +183,42 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
         setBaselineItems(createBaselineItems([item]));
         setLastScanTelemetry({ source: 'upload', mode, latencyMs: Date.now() - startTs });
         setScanError(null);
+        setLastScanTelemetry({ source: 'upload', mode, latencyMs: Date.now() - startTs });
+        setScanError(null);
+      } else {
+        const res = await processQRCode(base64);
+        if (!res) {
+          trackEvent('scan_failed', { source: 'upload', mode, reason: 'empty_result' });
+          setScanError('We could not read that tag. Try centering the code or upload a sharper image.');
+          setScanErrorSource('upload');
+          setDetectedItems(null);
+          return;
+        }
+        const item: WardrobeItem = {
+          id: `qr-${Date.now()}`,
+          category: (res.category as Category) || Category.TOP,
+          subcategory: res.subcategory || 'qr-item',
+          brand: res.brand || 'Digital Tag',
+          imageUrl: base64,
+          dominantColorHex: res.dominantColorHex || '#000000',
+          paletteHex: [res.dominantColorHex || '#000000'],
+          colorFamily: res.colorFamily || 'Neutral',
+          colorName: res.colorName || 'Unknown',
+          patternType: (res.patternType as PatternType) || PatternType.SOLID,
+          confidence: 1.0,
+          createdAt: Date.now(),
+        };
+        setDetectedItems([item]);
+        setBaselineItems(createBaselineItems([item]));
+        setBaselineItems({ [item.id]: {
+          category: item.category,
+          patternType: item.patternType,
+          subcategory: item.subcategory,
+          colorName: item.colorName,
+          colorFamily: item.colorFamily
+        } });
+        setLastScanTelemetry({ source: 'upload', mode, latencyMs: Date.now() - startTs });
+        setScanError(null);
       }
     } catch (error) {
       trackEvent('scan_failed', { source: 'upload', mode, reason: 'processing_error' });
@@ -233,6 +270,13 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
         };
         setDetectedItems([item]);
         setBaselineItems(createBaselineItems([item]));
+        setBaselineItems({ [item.id]: {
+          category: item.category,
+          patternType: item.patternType,
+          subcategory: item.subcategory,
+          colorName: item.colorName,
+          colorFamily: item.colorFamily
+        } });
         setLastScanTelemetry({ source: 'live', mode, latencyMs: Date.now() - startTs });
         setScanError(null);
       } else {
@@ -321,12 +365,16 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
   const applyFieldToSimilar = <K extends keyof WardrobeItem>(id: string, field: K, value: WardrobeItem[K]) => {
     if (!detectedItems || !isEditableScanField(field)) return;
     const editableField = field;
+    if (!detectedItems || !['category', 'patternType', 'colorFamily', 'subcategory', 'colorName'].includes(String(field))) return;
+    const source = detectedItems.find(i => i.id === id);
+    if (!source) return;
 
     setDetectedItems(prev => prev ? applyFieldToSimilarItems(prev, id, editableField, value as WardrobeItem[typeof editableField], baselineItems) : prev);
 
     trackEvent('scan_item_edited', {
       item_id: id,
       fields: [editableField]
+      fields: [field as 'category' | 'patternType' | 'colorFamily' | 'subcategory' | 'colorName']
     });
   };
 

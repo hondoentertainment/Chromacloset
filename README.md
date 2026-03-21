@@ -33,3 +33,4 @@ View your app in AI Studio: https://ai.studio/apps/drive/1QM8jKwMdH1TzMK1hJ8E1H2
 - See [`VC_DEFENSIBILITY.md`](./VC_DEFENSIBILITY.md) for competitive review and defensibility strategy.
 - See [`VC_PRODUCTION_ROADMAP.md`](./VC_PRODUCTION_ROADMAP.md) for the investor-facing roadmap to make Chromacloset VC- and production-worthy.
 - See [`PRODUCTION_NEXT_5_PHASES.md`](./PRODUCTION_NEXT_5_PHASES.md) for the recommended next five phases to turn the current app into a production-grade product.
+- See [`VC_DEFENSIBILITY.md`](./VC_DEFENSIBILITY.md) for competitive review and defensibility strategy.

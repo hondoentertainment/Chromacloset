@@ -5,6 +5,16 @@ import { WardrobeItem, OutfitRecommendation, WardrobeGap, StylePersona, ChatMess
 import { trackEvent } from '../services/analyticsService';
 import { buildPreferenceMemory, getStyleBriefSuggestion, rerankOutfitsWithPreferences } from '../services/personalizationService';
 import { useCloset } from '../contexts/ClosetContext';
+import { generateOutfits, analyzeWardrobeGaps, searchForGapItems, createStylingChat } from '../services/stylistService';
+import { WardrobeItem, OutfitRecommendation, WardrobeGap, StylePersona, ChatMessage, AgentMode } from '../types';
+import { trackEvent } from '../services/analyticsService';
+import { buildPreferenceMemory, getStyleBriefSuggestion, rerankOutfitsWithPreferences } from '../services/personalizationService';
+
+interface StylistModuleProps {
+  items: WardrobeItem[];
+  savedOutfits: OutfitRecommendation[];
+  onSavedOutfitsChange: React.Dispatch<React.SetStateAction<OutfitRecommendation[]>>;
+}
 
 const PERSONAS: StylePersona[] = ['Minimalist', 'Streetwear', 'Classic Professional', 'Bohemian', 'Quiet Luxury', 'Bold & Eclectic'];
 const AGENT_MODES: Array<{ mode: AgentMode; title: string; desc: string }> = [
@@ -186,6 +196,7 @@ const OutfitCard: React.FC<OutfitCardProps> = ({
 
 export const StylistModule: React.FC = () => {
   const { items, savedOutfits, setSavedOutfits } = useCloset();
+export const StylistModule: React.FC<StylistModuleProps> = ({ items, savedOutfits, onSavedOutfitsChange }) => {
   const [occasion, setOccasion] = useState('Casual Weekend');
   const [persona, setPersona] = useState<StylePersona>('Minimalist');
   const [agentMode, setAgentMode] = useState<AgentMode>('Balanced');
@@ -210,6 +221,19 @@ export const StylistModule: React.FC = () => {
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [chatError, setChatError] = useState<string | null>(null);
   const [loadingHint, setLoadingHint] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!loading) {
+      setLoadingHint(null);
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setLoadingHint('Still curating looks — Gemini is taking longer than usual. You can keep waiting or retry.');
+    }, 6000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [loading]);
 
   useEffect(() => {
     if (!loading) {
@@ -293,6 +317,9 @@ export const StylistModule: React.FC = () => {
         generateOutfits(items, occasion, persona, weather || undefined, agentMode),
         new Promise<never>((_, reject) => {
           window.setTimeout(() => reject(new Error('timeout')), activeProfile.timeoutMs);
+        generateOutfits(items, occasion, persona, weather || undefined),
+        new Promise<never>((_, reject) => {
+          window.setTimeout(() => reject(new Error('timeout')), 15000);
         })
       ]);
 
@@ -304,6 +331,7 @@ export const StylistModule: React.FC = () => {
 
       const ranked = rerankOutfitsWithPreferences(result, savedOutfits, items, { persona, occasion, weather });
       setOutfits(ranked);
+      setOutfits(result);
       trackEvent('outfits_generated', { count: result.length });
       setGenerationError(null);
     } catch (error) {
@@ -323,12 +351,12 @@ export const StylistModule: React.FC = () => {
   const toggleSaveOutfit = (outfit: OutfitRecommendation) => {
     const isAlreadySaved = savedOutfits.some(o => o.id === outfit.id);
     if (isAlreadySaved) {
-      setSavedOutfits(prev => prev.filter(o => o.id !== outfit.id));
+      onSavedOutfitsChange(prev => prev.filter(o => o.id !== outfit.id));
       trackEvent('outfit_unsaved', { outfit_id: outfit.id });
       showToast("Removed from Lookbook");
     } else {
       const newOutfit = { ...outfit, isSaved: true, dateSaved: Date.now() };
-      setSavedOutfits(prev => [newOutfit, ...prev]);
+      onSavedOutfitsChange(prev => [newOutfit, ...prev]);
       trackEvent('outfit_saved', { outfit_id: outfit.id });
       showToast("Added to Lookbook ✨");
     }
@@ -336,6 +364,7 @@ export const StylistModule: React.FC = () => {
 
   const updateOutfitUsage = (id: string) => {
     setSavedOutfits(prev => prev.map(o =>
+    onSavedOutfitsChange(prev => prev.map(o =>
       o.id === id ? { ...o, lastWorn: Date.now() } : o
     ));
     showToast("Outfit marked as worn today!");
@@ -343,6 +372,7 @@ export const StylistModule: React.FC = () => {
 
   const updateOutfitNotes = (id: string, notes: string) => {
     setSavedOutfits(prev => prev.map(o =>
+    onSavedOutfitsChange(prev => prev.map(o =>
       o.id === id ? { ...o, userNotes: notes } : o
     ));
   };
@@ -350,7 +380,7 @@ export const StylistModule: React.FC = () => {
 
   const setOutfitFeedback = (id: string, feedback: 'love' | 'skip', source: 'curator' | 'lookbook') => {
     setOutfits(prev => prev.map(o => o.id === id ? { ...o, outfitFeedback: feedback } : o));
-    setSavedOutfits(prev => prev.map(o => o.id === id ? { ...o, outfitFeedback: feedback } : o));
+    onSavedOutfitsChange(prev => prev.map(o => o.id === id ? { ...o, outfitFeedback: feedback } : o));
     trackEvent('outfit_feedback_given', { outfit_id: id, feedback, source });
     showToast(feedback === 'love' ? 'Preference saved: Love this look' : 'Preference saved: Skip this look');
   };
@@ -385,6 +415,7 @@ export const StylistModule: React.FC = () => {
               { label: 'Top signal', value: preferenceMemory.topColorFamilies[0] || 'Learning' },
               { label: 'Fallback path', value: activeProfile.fallbackStrategy },
               { label: 'Loved looks', value: preferenceMemory.lovedOutfitCount },
+              { label: 'Occasion', value: occasion },
             ].map((card) => (
               <div key={card.label} className="rounded-2xl border border-white/10 bg-slate-900/50 px-4 py-3">
                 <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{card.label}</p>

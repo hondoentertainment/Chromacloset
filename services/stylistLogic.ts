@@ -47,6 +47,15 @@ export const normalizeOutfits = (raw: OutfitRecommendation[], items: WardrobeIte
       const validItemIds = outfit.itemIds.filter(id => byId.has(id));
       const uniqueItemIds = [...new Set(validItemIds)];
       const categoryList = uniqueItemIds
+export const normalizeOutfits = (raw: OutfitRecommendation[], items: WardrobeItem[], weather?: string): OutfitRecommendation[] => {
+  const byId = new Map(items.map(i => [i.id, i]));
+  const seenSignatures = new Set<string>();
+  const weatherFocus = getWeatherFocus(weather);
+
+  return raw
+    .map((outfit, idx) => {
+      const validItemIds = outfit.itemIds.filter(id => byId.has(id));
+      const categoryList = validItemIds
         .map(id => byId.get(id)?.category)
         .filter((category): category is Category => Boolean(category));
       const categories = new Set(categoryList);
@@ -74,6 +83,22 @@ export const normalizeOutfits = (raw: OutfitRecommendation[], items: WardrobeIte
         if (category === Category.ACCESSORIES) return score + 0.5;
         return score;
       }, 0);
+      const validCount = new Set(validItemIds).size === validItemIds.length;
+      const isValidComposition =
+        hasTop &&
+        hasBottom &&
+        validItemIds.length >= 2 &&
+        validItemIds.length <= 5 &&
+        validCount;
+
+      if (!isValidComposition) return null;
+
+      const signature = [...validItemIds].sort().join('|');
+      if (seenSignatures.has(signature)) return null;
+      seenSignatures.add(signature);
+
+      const weatherScore = getWeatherScore(categoryList, weatherFocus);
+      const diversityScore = new Set(validItemIds.map((id) => byId.get(id)?.colorFamily)).size;
 
       return {
         ...outfit,
@@ -103,4 +128,11 @@ export const normalizeOutfits = (raw: OutfitRecommendation[], items: WardrobeIte
     seenCoreSignatures.add(outfit.coreSignature);
     return true;
   }).map(({ coreSignature: _coreSignature, fullSignature: _fullSignature, ...outfit }) => outfit);
+        itemIds: validItemIds,
+        weatherFocus,
+        score: weatherScore + diversityScore,
+      };
+    })
+    .filter((o): o is NonNullable<typeof o> => Boolean(o))
+    .sort((a, b) => (b.score || 0) - (a.score || 0));
 };
