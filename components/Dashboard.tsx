@@ -1,6 +1,11 @@
 
 import React, { useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
+import { WardrobeItem } from '../types';
+import { generateClosetIcon } from '../services/geminiService';
+import { analyzeWardrobeGaps } from '../services/stylistService';
+import { trackEvent } from '../services/analyticsService';
+import { useCloset } from '../contexts/ClosetContext';
 import { WardrobeItem, ScanResult, OutfitRecommendation } from '../types';
 import { generateClosetIcon } from '../services/geminiService';
 import { analyzeWardrobeGaps } from '../services/stylistService';
@@ -26,6 +31,8 @@ const STYLE_VIBES = [
   { id: 'organic', label: 'Organic', desc: 'Soft shapes, natural' }
 ];
 
+export const Dashboard: React.FC = () => {
+  const { items, totalScannedCount, closetIcon, savedOutfits, scans, deleteScan, setClosetIcon } = useCloset();
 export const Dashboard: React.FC<DashboardProps> = ({ 
   items, scans, savedOutfits, onDeleteScan, totalScannedCount, closetIcon, onIconUpdate, showInternalInsights = false
 }) => {
@@ -45,6 +52,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
       return [];
     }
   }, []);
+
+
 
 
 
@@ -113,7 +122,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         : "a beautiful spectrum of vibrant colors";
       
       const iconUrl = await generateClosetIcon(selectedVibe.id, colorContext);
-      onIconUpdate(iconUrl);
+      setClosetIcon(iconUrl);
       setGenProgress(100);
       setTimeout(() => setGenProgress(0), 1000);
     } catch (err) {
@@ -150,6 +159,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
       setGapError('Could not generate a suggestion right now. Please retry.');
     } finally {
       setIsGapLoading(false);
+    }
+  };
+
+  const handleDeleteScan = (timestamp: number, itemCount: number) => {
+    if (confirm(`Remove this scan record and its ${itemCount} items from your closet?`)) {
+      trackEvent('scan_deleted', { items_removed: itemCount });
+      deleteScan(timestamp);
     }
   };
 
@@ -292,6 +308,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </div>
         </div>
       )}
+
+
+
 
       {showInternalInsights && (
       <section className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-6">
@@ -582,7 +601,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         <p className="text-sm font-bold text-slate-800 mt-1">Added {scan.items.length} items</p>
                       </div>
                       <button 
-                        onClick={() => onDeleteScan(scan.timestamp)}
+                        onClick={() => handleDeleteScan(scan.timestamp, scan.items.length)}
                         className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
                       >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>

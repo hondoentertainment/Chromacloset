@@ -1,3 +1,4 @@
+import React, { useEffect, useState } from 'react';
 import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { ScanModule } from './components/ScanModule';
@@ -5,6 +6,16 @@ import { Dashboard } from './components/Dashboard';
 import { ColorExplorer } from './components/ColorExplorer';
 import { StylistModule } from './components/StylistModule';
 import { AnalyticsDebugPanel } from './components/AnalyticsDebugPanel';
+import { InternalToolsPanel } from './components/InternalToolsPanel';
+import type { ScanTelemetry } from './components/ScanModule';
+import { trackEvent } from './services/analyticsService';
+import { ClosetProvider, useCloset } from './contexts/ClosetContext';
+import { isInternalToolsEnabled } from './services/runtimeConfig';
+
+const AppShell: React.FC = () => {
+  const { items, scans, totalScannedCount, savedOutfits, closetIcon, addScanResult, resetCloset } = useCloset();
+  const internalToolsEnabled = isInternalToolsEnabled();
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'scan' | 'explorer' | 'stylist' | 'internal'>(internalToolsEnabled ? 'dashboard' : 'dashboard');
 import { WardrobeItem, ScanResult, OutfitRecommendation } from './types';
 import type { ScanTelemetry } from './components/ScanModule';
 import { trackEvent } from './services/analyticsService';
@@ -24,6 +35,8 @@ const App: React.FC = () => {
     trackEvent('app_opened', { source: 'browser' });
   }, []);
 
+  const handleScanComplete = (newItems: typeof items, telemetry?: ScanTelemetry) => {
+    addScanResult(newItems);
   useEffect(() => {
     try {
       savePersistedClosetState({
@@ -66,21 +79,10 @@ const App: React.FC = () => {
     setActiveTab('dashboard');
   };
 
-  const deleteScan = (timestamp: number) => {
-    const scanToDelete = scans.find(s => s.timestamp === timestamp);
-    if (!scanToDelete) return;
-
-    if (confirm(`Remove this scan record and its ${scanToDelete.items.length} items from your closet?`)) {
-      trackEvent('scan_deleted', { items_removed: scanToDelete.items.length });
-      const itemIdsToRemove = new Set(scanToDelete.items.map(i => i.id));
-      setItems(prev => prev.filter(item => !itemIdsToRemove.has(item.id)));
-      setScans(prev => prev.filter(s => s.timestamp !== timestamp));
-    }
-  };
-
   const clearCloset = () => {
     if (confirm('Are you sure you want to clear your entire inventory? This cannot be undone.')) {
       trackEvent('closet_reset', { items_before_reset: items.length, scans_before_reset: scans.length });
+      resetCloset();
       setItems([]);
       setScans([]);
       setSavedOutfits([]);
@@ -90,9 +92,12 @@ const App: React.FC = () => {
     }
   };
 
-  const handleTabChange = (tab: 'dashboard' | 'scan' | 'explorer' | 'stylist') => {
+  const handleTabChange = (tab: 'dashboard' | 'scan' | 'explorer' | 'stylist' | 'internal') => {
+    if (tab === 'internal' && !internalToolsEnabled) {
+      return;
+    }
     if (tab !== activeTab) {
-      trackEvent('tab_switched', { to_tab: tab });
+      trackEvent('tab_switched', { to_tab: tab === 'internal' ? 'dashboard' : tab });
     }
     setActiveTab(tab);
   };
@@ -117,6 +122,9 @@ const App: React.FC = () => {
         closetIcon={closetIcon}
         itemsCount={items.length}
         totalScannedCount={totalScannedCount}
+        showInternalTab={internalToolsEnabled}
+      />
+
       />
 
       <Header 
@@ -158,6 +166,14 @@ const App: React.FC = () => {
                   >
                     Open Style Concierge
                   </button>
+                  {internalToolsEnabled && (
+                    <button
+                      onClick={() => handleTabChange('internal')}
+                      className="px-6 py-3 rounded-2xl border border-cyan-400/20 bg-cyan-400/10 text-cyan-100 font-bold hover:bg-cyan-400/20 transition-all"
+                    >
+                      Open Internal Tools
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -187,6 +203,14 @@ const App: React.FC = () => {
                 </button>
               </div>
             )}
+            <Dashboard />
+          </>
+        )}
+
+        {activeTab === 'scan' && <ScanModule onScanComplete={handleScanComplete} />}
+        {activeTab === 'explorer' && <ColorExplorer items={items} />}
+        {activeTab === 'stylist' && <StylistModule />}
+        {activeTab === 'internal' && internalToolsEnabled && <InternalToolsPanel />}
             <Dashboard
               items={items}
               scans={scans}
@@ -216,6 +240,13 @@ const App: React.FC = () => {
           <div className="py-20 flex flex-col items-center justify-center text-center animate-in fade-in duration-700">
             <div className="w-full max-w-3xl rounded-[2.5rem] border border-white/10 bg-white/5 backdrop-blur-2xl p-10 md:p-14 shadow-[0_40px_120px_rgba(15,23,42,0.5)]">
               <div className="w-32 h-32 bg-white rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-indigo-100 mb-10 overflow-hidden border-2 border-slate-50 mx-auto">
+                {closetIcon ? (
+                  <img src={closetIcon} alt="Closet Identity" className="w-full h-full object-cover" />
+                ) : (
+                  <svg className="w-12 h-12 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-7.714 2.143L11 21l-2.286-6.857L1 12l7.714-2.143L11 3z" />
+                  </svg>
+                )}
               {closetIcon ? (
                 <img src={closetIcon} alt="Closet Identity" className="w-full h-full object-cover" />
               ) : (
@@ -252,9 +283,15 @@ const App: React.FC = () => {
         <p>&copy; 2026 Chromacloset Wardrobe Intelligence</p>
       </footer>
 
-      <AnalyticsDebugPanel />
+      {activeTab === 'internal' && internalToolsEnabled && <AnalyticsDebugPanel />}
     </div>
   );
 };
+
+const App: React.FC = () => (
+  <ClosetProvider>
+    <AppShell />
+  </ClosetProvider>
+);
 
 export default App;

@@ -32,6 +32,21 @@ export const getWeatherScore = (categories: Category[], weatherFocus: OutfitReco
   }
 };
 
+const CORE_CATEGORIES = [Category.TOP, Category.BOTTOM] as const;
+
+const getCoreItemIds = (itemIds: string[], byId: Map<string, WardrobeItem>): string[] =>
+  itemIds.filter((id) => CORE_CATEGORIES.includes(byId.get(id)?.category as typeof CORE_CATEGORIES[number]));
+
+const buildSignature = (itemIds: string[]): string => [...itemIds].sort().join('|');
+
+export const normalizeOutfits = (raw: OutfitRecommendation[], items: WardrobeItem[], weather?: string): OutfitRecommendation[] => {
+  const byId = new Map(items.map(i => [i.id, i]));
+  const weatherFocus = getWeatherFocus(weather);
+  const normalized = raw
+    .map((outfit, idx) => {
+      const validItemIds = outfit.itemIds.filter(id => byId.has(id));
+      const uniqueItemIds = [...new Set(validItemIds)];
+      const categoryList = uniqueItemIds
 export const normalizeOutfits = (raw: OutfitRecommendation[], items: WardrobeItem[], weather?: string): OutfitRecommendation[] => {
   const byId = new Map(items.map(i => [i.id, i]));
   const seenSignatures = new Set<string>();
@@ -47,6 +62,27 @@ export const normalizeOutfits = (raw: OutfitRecommendation[], items: WardrobeIte
 
       const hasTop = categories.has(Category.TOP);
       const hasBottom = categories.has(Category.BOTTOM);
+      const isValidComposition =
+        hasTop &&
+        hasBottom &&
+        uniqueItemIds.length >= 2 &&
+        uniqueItemIds.length <= 5 &&
+        uniqueItemIds.length === validItemIds.length;
+
+      if (!isValidComposition) return null;
+
+      const fullSignature = buildSignature(uniqueItemIds);
+      const coreItemIds = getCoreItemIds(uniqueItemIds, byId);
+      if (coreItemIds.length < 2) return null;
+
+      const coreSignature = buildSignature(coreItemIds);
+      const weatherScore = getWeatherScore(categoryList, weatherFocus);
+      const diversityScore = new Set(uniqueItemIds.map((id) => byId.get(id)?.colorFamily)).size;
+      const compositionBonus = categoryList.reduce((score, category) => {
+        if (category === Category.OUTERWEAR || category === Category.SHOES) return score + 1;
+        if (category === Category.ACCESSORIES) return score + 0.5;
+        return score;
+      }, 0);
       const validCount = new Set(validItemIds).size === validItemIds.length;
       const isValidComposition =
         hasTop &&
@@ -67,6 +103,31 @@ export const normalizeOutfits = (raw: OutfitRecommendation[], items: WardrobeIte
       return {
         ...outfit,
         id: outfit.id || `outfit-${Date.now()}-${idx}`,
+        itemIds: uniqueItemIds,
+        weatherFocus,
+        score: weatherScore + diversityScore + compositionBonus,
+        coreSignature,
+        fullSignature,
+      };
+    })
+    .filter((o): o is NonNullable<typeof o> => Boolean(o))
+    .sort((left, right) => (right.score || 0) - (left.score || 0));
+
+  const seenFullSignatures = new Set<string>();
+  const seenCoreSignatures = new Set<string>();
+
+  return normalized.filter((outfit) => {
+    if (seenFullSignatures.has(outfit.fullSignature)) {
+      return false;
+    }
+    seenFullSignatures.add(outfit.fullSignature);
+
+    if (seenCoreSignatures.has(outfit.coreSignature)) {
+      return false;
+    }
+    seenCoreSignatures.add(outfit.coreSignature);
+    return true;
+  }).map(({ coreSignature: _coreSignature, fullSignature: _fullSignature, ...outfit }) => outfit);
         itemIds: validItemIds,
         weatherFocus,
         score: weatherScore + diversityScore,

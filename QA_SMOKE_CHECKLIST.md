@@ -20,6 +20,7 @@ Quick manual verification checklist for core UX and analytics integrity before e
 3. **Scan Flow**
    - Upload or capture a scan.
    - Confirm `scan_started` event.
+   - Confirm the review queue surfaces lowest-confidence / incomplete items first.
    - In review mode, edit an item field and confirm `scan_item_edited`.
    - Use **Apply to similar** on at least one editable field.
    - Confirm validation blocks save when subcategory or color name is blank.

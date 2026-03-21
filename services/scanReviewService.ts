@@ -4,6 +4,14 @@ export type EditableScanField = 'category' | 'patternType' | 'subcategory' | 'co
 export type ScanBaseline = Partial<Pick<WardrobeItem, EditableScanField>>;
 export type ScanBaselines = Record<string, ScanBaseline>;
 
+export interface ScanReviewSummary {
+  totalItems: number;
+  lowConfidenceCount: number;
+  editedCount: number;
+  missingCoreMetadataCount: number;
+  averageConfidence: number;
+}
+
 export const EDITABLE_SCAN_FIELDS: EditableScanField[] = ['category', 'patternType', 'subcategory', 'colorName', 'colorFamily'];
 
 export const createBaselineItems = (items: WardrobeItem[]): ScanBaselines =>
@@ -58,5 +66,41 @@ export const resetItemToBaseline = (item: WardrobeItem, baseline?: ScanBaseline)
     colorName: (baseline.colorName as string) || item.colorName,
     colorFamily: (baseline.colorFamily as string) || item.colorFamily,
     isEdited: false,
+  };
+};
+
+const hasMissingCoreMetadata = (item: WardrobeItem): boolean =>
+  !item.subcategory.trim() || !item.colorName.trim();
+
+export const sortScanReviewItems = (items: WardrobeItem[]): WardrobeItem[] =>
+  [...items].sort((left, right) => {
+    const leftMissing = hasMissingCoreMetadata(left) ? 1 : 0;
+    const rightMissing = hasMissingCoreMetadata(right) ? 1 : 0;
+    if (leftMissing !== rightMissing) return rightMissing - leftMissing;
+
+    const leftNeedsReview = left.confidence < 0.8 ? 1 : 0;
+    const rightNeedsReview = right.confidence < 0.8 ? 1 : 0;
+    if (leftNeedsReview !== rightNeedsReview) return rightNeedsReview - leftNeedsReview;
+
+    if (left.confidence !== right.confidence) return left.confidence - right.confidence;
+
+    return left.createdAt - right.createdAt;
+  });
+
+export const buildScanReviewSummary = (items: WardrobeItem[]): ScanReviewSummary => {
+  const totalItems = items.length;
+  const lowConfidenceCount = items.filter((item) => item.confidence < 0.8).length;
+  const editedCount = items.filter((item) => item.isEdited).length;
+  const missingCoreMetadataCount = items.filter(hasMissingCoreMetadata).length;
+  const averageConfidence = totalItems === 0
+    ? 0
+    : Math.round((items.reduce((sum, item) => sum + item.confidence, 0) / totalItems) * 100);
+
+  return {
+    totalItems,
+    lowConfidenceCount,
+    editedCount,
+    missingCoreMetadataCount,
+    averageConfidence,
   };
 };

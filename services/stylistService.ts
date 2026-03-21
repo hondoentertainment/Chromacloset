@@ -309,6 +309,11 @@ export const generateOutfits = async (
 
 export const createStylingChat = (items: WardrobeItem[], persona: StylePersona, agentMode: AgentMode = 'Balanced') => {
   const ai = createGeminiClient();
+  }
+};
+
+export const createStylingChat = (items: WardrobeItem[], persona: StylePersona, agentMode: AgentMode = 'Balanced') => {
+  const ai = createGeminiClient();
     return normalized.length > 0 ? normalized : buildFallbackOutfits(items, occasion, persona, weather);
   } catch (error) {
     console.error("Stylist Error:", error);

@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { applyEditToItem, applyFieldToSimilarItems, buildScanReviewSummary, createBaselineItems, resetItemToBaseline, sortScanReviewItems } from '../../services/scanReviewService.js';
 import { applyEditToItem, applyFieldToSimilarItems, createBaselineItems, resetItemToBaseline } from '../../services/scanReviewService.js';
 import { Category, PatternType, type WardrobeItem } from '../../types.js';
 
@@ -42,4 +43,26 @@ test('applyFieldToSimilarItems updates only matching subcategories', () => {
   assert.equal(updated.find((entry) => entry.id === '2')?.colorFamily, 'Neutral');
   assert.equal(updated.find((entry) => entry.id === '2')?.isEdited, true);
   assert.equal(updated.find((entry) => entry.id === '3')?.colorFamily, 'Blue');
+});
+
+test('sortScanReviewItems prioritizes incomplete and low-confidence items first', () => {
+  const completeHighConfidence = item('1', 'shirt');
+  const lowConfidence = { ...item('2', 'shirt', 'Blue'), confidence: 0.62 };
+  const missingMetadata = { ...item('3', '', '   '), confidence: 0.91 };
+
+  const ordered = sortScanReviewItems([completeHighConfidence, lowConfidence, missingMetadata]);
+  assert.deepEqual(ordered.map((entry) => entry.id), ['3', '2', '1']);
+});
+
+test('buildScanReviewSummary reports queue health details', () => {
+  const edited = { ...item('1', 'shirt'), isEdited: true };
+  const lowConfidence = { ...item('2', 'trouser', 'Black'), confidence: 0.55 };
+  const missingMetadata = { ...item('3', '', ' '), confidence: 0.95 };
+
+  const summary = buildScanReviewSummary([edited, lowConfidence, missingMetadata]);
+  assert.equal(summary.totalItems, 3);
+  assert.equal(summary.lowConfidenceCount, 1);
+  assert.equal(summary.editedCount, 1);
+  assert.equal(summary.missingCoreMetadataCount, 1);
+  assert.equal(summary.averageConfidence, 83);
 });

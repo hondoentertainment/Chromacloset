@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { analyzeClosetImage, processQRCode } from '../services/geminiService';
 import { WardrobeItem, Category, PatternType, BoundingBox } from '../types';
 import { trackEvent } from '../services/analyticsService';
+import { applyEditToItem, applyFieldToSimilarItems, buildScanReviewSummary, createBaselineItems, isEditableScanField, resetItemToBaseline as resetScanItemToBaseline, sortScanReviewItems } from '../services/scanReviewService.js';
 import { applyEditToItem, applyFieldToSimilarItems, createBaselineItems, isEditableScanField, resetItemToBaseline as resetScanItemToBaseline } from '../services/scanReviewService.js';
 
 export type ScanMode = 'cloth' | 'qr';
@@ -33,6 +34,8 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
   const [baselineItems, setBaselineItems] = useState<Record<string, Partial<WardrobeItem>>>({});
   const [showAdvancedEdits, setShowAdvancedEdits] = useState(true);
   const [processingHint, setProcessingHint] = useState<string | null>(null);
+  const orderedDetectedItems = detectedItems ? sortScanReviewItems(detectedItems) : [];
+  const reviewSummary = detectedItems ? buildScanReviewSummary(detectedItems) : null;
 
   const mapScanResultToItem = (res: any, index: number, imageUrl: string): WardrobeItem => ({
     id: `item-${Date.now()}-${index}`,
@@ -151,6 +154,35 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
         const items: WardrobeItem[] = results.map((res: any, index: number) => mapScanResultToItem(res, index, base64));
         setDetectedItems(items);
         setBaselineItems(createBaselineItems(items));
+        setLastScanTelemetry({ source: 'upload', mode, latencyMs: Date.now() - startTs });
+        setScanError(null);
+      } else {
+        const res = await processQRCode(base64);
+        if (!res) {
+          trackEvent('scan_failed', { source: 'upload', mode, reason: 'empty_result' });
+          setScanError('We could not read that tag. Try centering the code or upload a sharper image.');
+          setScanErrorSource('upload');
+          setDetectedItems(null);
+          return;
+        }
+        const item: WardrobeItem = {
+          id: `qr-${Date.now()}`,
+          category: (res.category as Category) || Category.TOP,
+          subcategory: res.subcategory || 'qr-item',
+          brand: res.brand || 'Digital Tag',
+          imageUrl: base64,
+          dominantColorHex: res.dominantColorHex || '#000000',
+          paletteHex: [res.dominantColorHex || '#000000'],
+          colorFamily: res.colorFamily || 'Neutral',
+          colorName: res.colorName || 'Unknown',
+          patternType: (res.patternType as PatternType) || PatternType.SOLID,
+          confidence: 1.0,
+          createdAt: Date.now(),
+        };
+        setDetectedItems([item]);
+        setBaselineItems(createBaselineItems([item]));
+        setLastScanTelemetry({ source: 'upload', mode, latencyMs: Date.now() - startTs });
+        setScanError(null);
         setLastScanTelemetry({ source: 'upload', mode, latencyMs: Date.now() - startTs });
         setScanError(null);
       } else {
@@ -375,8 +407,8 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
           <div>
             <h2 className="text-3xl font-black text-slate-900 tracking-tight">Review Intel</h2>
             <p className="text-slate-500">
-              {mode === 'qr' ? 'Verified item from digital tag.' : `Gemini detected ${detectedItems.length} items in space.`} 
-              Hover on boxes to identify.
+              {mode === 'qr' ? 'Verified item from digital tag.' : `Gemini detected ${detectedItems.length} items in space.`}
+              {' '}Low-confidence and incomplete items are prioritized first.
             </p>
           </div>
           <div className="flex gap-3 w-full md:w-auto">
@@ -443,7 +475,31 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
 
           {/* Item List Panel */}
           <div className="lg:col-span-5 space-y-4 max-h-[70vh] overflow-y-auto pr-2" ref={reviewContainerRef}>
-            {detectedItems.map((item) => (
+            {reviewSummary && (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4">
+                <div className="flex flex-wrap items-center gap-2 text-[11px] font-black uppercase tracking-[0.18em] text-amber-700">
+                  <span>Review Queue</span>
+                  <span className="rounded-full bg-white px-2 py-1 text-[10px] text-amber-700 shadow-sm">
+                    Avg confidence {reviewSummary.averageConfidence}%
+                  </span>
+                </div>
+                <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-slate-700">
+                  <div className="rounded-xl bg-white px-3 py-2">
+                    <p className="font-bold text-slate-900">{reviewSummary.lowConfidenceCount}</p>
+                    <p className="text-[11px] text-slate-500">Need confidence review</p>
+                  </div>
+                  <div className="rounded-xl bg-white px-3 py-2">
+                    <p className="font-bold text-slate-900">{reviewSummary.missingCoreMetadataCount}</p>
+                    <p className="text-[11px] text-slate-500">Missing core fields</p>
+                  </div>
+                  <div className="rounded-xl bg-white px-3 py-2">
+                    <p className="font-bold text-slate-900">{reviewSummary.editedCount}</p>
+                    <p className="text-[11px] text-slate-500">Already corrected</p>
+                  </div>
+                </div>
+              </div>
+            )}
+            {orderedDetectedItems.map((item, index) => (
               <div 
                 key={item.id} 
                 onMouseEnter={() => setHoveredItemId(item.id)}
@@ -465,6 +521,14 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
                     <h4 className="font-bold text-slate-900 truncate capitalize">{item.colorName} {item.subcategory}</h4>
                     <div className="flex items-center gap-2">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{item.brand}</span>
+                      {index === 0 && (item.confidence < 0.8 || !item.subcategory.trim() || !item.colorName.trim()) && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700 font-bold">Review first</span>
+                      )}
+                      {item.confidence < 0.8 && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 font-bold">
+                          {(item.confidence * 100).toFixed(0)}% confidence
+                        </span>
+                      )}
                       {item.isEdited && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 font-bold">Edited</span>}
                     </div>
                   </div>

@@ -1,4 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
+import { getGeminiApiKeyFromEnv } from './runtimeConfig.js';
+
+export const getGeminiApiKey = (): string => getGeminiApiKeyFromEnv();
 
 const readRuntimeEnv = (key: string): string | undefined => {
   if (typeof import.meta !== 'undefined' && import.meta.env?.[key]) {

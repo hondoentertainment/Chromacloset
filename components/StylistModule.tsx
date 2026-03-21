@@ -1,6 +1,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { generateOutfits, analyzeWardrobeGaps, searchForGapItems, createStylingChat, getActiveStylistProfile } from '../services/stylistService';
+import { WardrobeItem, OutfitRecommendation, WardrobeGap, StylePersona, ChatMessage, AgentMode } from '../types';
+import { trackEvent } from '../services/analyticsService';
+import { buildPreferenceMemory, getStyleBriefSuggestion, rerankOutfitsWithPreferences } from '../services/personalizationService';
+import { useCloset } from '../contexts/ClosetContext';
 import { generateOutfits, analyzeWardrobeGaps, searchForGapItems, createStylingChat } from '../services/stylistService';
 import { WardrobeItem, OutfitRecommendation, WardrobeGap, StylePersona, ChatMessage, AgentMode } from '../types';
 import { trackEvent } from '../services/analyticsService';
@@ -190,6 +194,8 @@ const OutfitCard: React.FC<OutfitCardProps> = ({
   );
 };
 
+export const StylistModule: React.FC = () => {
+  const { items, savedOutfits, setSavedOutfits } = useCloset();
 export const StylistModule: React.FC<StylistModuleProps> = ({ items, savedOutfits, onSavedOutfitsChange }) => {
   const [occasion, setOccasion] = useState('Casual Weekend');
   const [persona, setPersona] = useState<StylePersona>('Minimalist');
@@ -357,6 +363,7 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items, savedOutfit
   };
 
   const updateOutfitUsage = (id: string) => {
+    setSavedOutfits(prev => prev.map(o =>
     onSavedOutfitsChange(prev => prev.map(o =>
       o.id === id ? { ...o, lastWorn: Date.now() } : o
     ));
@@ -364,6 +371,7 @@ export const StylistModule: React.FC<StylistModuleProps> = ({ items, savedOutfit
   };
 
   const updateOutfitNotes = (id: string, notes: string) => {
+    setSavedOutfits(prev => prev.map(o =>
     onSavedOutfitsChange(prev => prev.map(o =>
       o.id === id ? { ...o, userNotes: notes } : o
     ));
