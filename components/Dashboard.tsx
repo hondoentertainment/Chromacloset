@@ -1,19 +1,11 @@
 
 import React, { useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
-import { WardrobeItem, ScanResult } from '../types';
+import { WardrobeItem } from '../types';
 import { generateClosetIcon } from '../services/geminiService';
 import { analyzeWardrobeGaps } from '../services/stylistService';
 import { trackEvent } from '../services/analyticsService';
-
-interface DashboardProps {
-  items: WardrobeItem[];
-  scans: ScanResult[];
-  onDeleteScan: (timestamp: number) => void;
-  totalScannedCount: number;
-  closetIcon: string | null;
-  onIconUpdate: (iconUrl: string) => void;
-}
+import { useCloset } from '../contexts/ClosetContext';
 
 const STYLE_VIBES = [
   { id: 'minimalist', label: 'Minimalist', desc: 'Clean lines, airy space' },
@@ -23,9 +15,8 @@ const STYLE_VIBES = [
   { id: 'organic', label: 'Organic', desc: 'Soft shapes, natural' }
 ];
 
-export const Dashboard: React.FC<DashboardProps> = ({ 
-  items, scans, onDeleteScan, totalScannedCount, closetIcon, onIconUpdate 
-}) => {
+export const Dashboard: React.FC = () => {
+  const { items, totalScannedCount, closetIcon, savedOutfits, scans, deleteScan, setClosetIcon } = useCloset();
   const [isStudioOpen, setIsStudioOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [selectedVibe, setSelectedVibe] = useState(STYLE_VIBES[0]);
@@ -33,6 +24,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [isGapLoading, setIsGapLoading] = useState(false);
   const [gapSuggestion, setGapSuggestion] = useState<{ itemType: string; suggestedColor: string; reasoning: string; priority: 'high' | 'medium' | 'low' } | null>(null);
   const [gapError, setGapError] = useState<string | null>(null);
+
+
 
   const stats = useMemo(() => {
     const total = items.length;
@@ -48,19 +41,41 @@ export const Dashboard: React.FC<DashboardProps> = ({
       acc[item.category] = (acc[item.category] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
+    const leastRepresentedFamilyEntry = Object.entries(familyCounts)
+      .sort((a, b) => (a[1] as number) - (b[1] as number))[0];
 
-    // FIX: Explicitly cast counts to number to resolve "The left-hand side of an arithmetic operation must be of type 'any', 'number', 'bigint' or an enum type" error.
     const mostCommonColorFamily = items.length > 0 
       ? Object.entries(familyCounts).sort((a, b) => (b[1] as number) - (a[1] as number))[0][0]
       : 'vibrant colors';
+    const categoryValues = Object.values(categoryCounts) as number[];
+    const colorBalanceScore = items.length > 0
+      ? Math.max(35, Math.round((families / Math.max(1, total)) * 100 + 45))
+      : 0;
+    const wardrobeDiversityScore = categoryValues.length > 0
+      ? Math.max(30, Math.round((Math.min(...categoryValues) / Math.max(...categoryValues)) * 100))
+      : 0;
+    const mostWornLookType: Record<string, number> = savedOutfits.length > 0
+      ? savedOutfits
+          .reduce((acc, outfit) => {
+            acc[outfit.styleVibe] = (acc[outfit.styleVibe] || 0) + (outfit.lastWorn ? 2 : 1);
+            return acc;
+          }, {} as Record<string, number>)
+      : {};
+    const dominantLookType = Object.keys(mostWornLookType).length > 0
+      ? Object.entries(mostWornLookType).sort((a, b) => b[1] - a[1])[0][0]
+      : 'Not enough wear data yet';
 
     return { 
       total, colors, families, 
       mostCommonColorFamily,
+      leastRepresentedFamily: leastRepresentedFamilyEntry?.[0] || 'Neutral',
+      colorBalanceScore,
+      wardrobeDiversityScore,
+      dominantLookType,
       familyData: Object.entries(familyCounts).map(([name, value]) => ({ name, value })),
       categoryData: Object.entries(categoryCounts).map(([name, value]) => ({ name, value }))
     };
-  }, [items]);
+  }, [items, savedOutfits]);
 
   const handleGenerateInStudio = async () => {
     setIsGenerating(true);
@@ -75,7 +90,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         : "a beautiful spectrum of vibrant colors";
       
       const iconUrl = await generateClosetIcon(selectedVibe.id, colorContext);
-      onIconUpdate(iconUrl);
+      setClosetIcon(iconUrl);
       setGenProgress(100);
       setTimeout(() => setGenProgress(0), 1000);
     } catch (err) {
@@ -109,12 +124,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
       }
     } catch (error) {
       trackEvent('dashboard_gap_suggestion_failed', { reason: 'service_error' });
-        setGapError('No clear gap found yet — your closet may already be well balanced.');
-      }
-    } catch (error) {
       setGapError('Could not generate a suggestion right now. Please retry.');
     } finally {
       setIsGapLoading(false);
+    }
+  };
+
+  const handleDeleteScan = (timestamp: number, itemCount: number) => {
+    if (confirm(`Remove this scan record and its ${itemCount} items from your closet?`)) {
+      trackEvent('scan_deleted', { items_removed: itemCount });
+      deleteScan(timestamp);
     }
   };
 
@@ -124,6 +143,36 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   return (
     <div className="space-y-8 py-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <section className="rounded-[2.5rem] border border-white/10 bg-white/5 backdrop-blur-2xl p-8 md:p-10 shadow-[0_24px_90px_rgba(15,23,42,0.35)]">
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8">
+          <div className="space-y-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-indigo-400/20 bg-indigo-400/10 px-4 py-1.5 text-xs font-black uppercase tracking-[0.24em] text-indigo-200">
+              Wardrobe performance overview
+            </div>
+            <div>
+              <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">Luxury intelligence for every piece you own.</h2>
+              <p className="text-slate-300 mt-3 max-w-2xl leading-relaxed">
+                Track collection density, identify underrepresented tones, and spot the next move your closet needs from a single editorial-style command surface.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: 'Closet depth', value: `${stats.total} pieces` },
+              { label: 'Dominant family', value: stats.mostCommonColorFamily },
+              { label: 'Balance score', value: `${stats.colorBalanceScore}/100` },
+              { label: 'Style signal', value: stats.dominantLookType },
+            ].map((kpi) => (
+              <div key={kpi.label} className="rounded-2xl border border-white/10 bg-slate-900/50 px-4 py-3">
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{kpi.label}</p>
+                <p className="mt-2 text-lg font-black text-white capitalize">{kpi.value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* Design Studio Modal */}
       {isStudioOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xl">
@@ -228,6 +277,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       )}
 
+
+
+
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Main Stats */}
         <div className="lg:col-span-9 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -274,6 +327,32 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       <div className="grid lg:grid-cols-12 gap-8">
         <div className="lg:col-span-8 space-y-8">
+          <div className="grid md:grid-cols-3 gap-4">
+            {[
+              {
+                label: 'Color Balance Score',
+                value: `${stats.colorBalanceScore}/100`,
+                note: stats.colorBalanceScore >= 75 ? 'Great spread across color families.' : `Add more ${stats.leastRepresentedFamily.toLowerCase()} pieces for balance.`,
+              },
+              {
+                label: 'Wardrobe Diversity',
+                value: `${stats.wardrobeDiversityScore}/100`,
+                note: stats.wardrobeDiversityScore >= 70 ? 'Category mix looks healthy.' : 'Your closet leans heavily into a few categories.',
+              },
+              {
+                label: 'Most Worn Look Type',
+                value: stats.dominantLookType,
+                note: savedOutfits.length > 0 ? 'Based on saved looks and wear marks.' : 'Save and wear outfits to unlock this insight.',
+              }
+            ].map((insight) => (
+              <div key={insight.label} className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{insight.label}</p>
+                <p className="text-xl font-bold text-slate-900 mt-2">{insight.value}</p>
+                <p className="text-xs text-slate-500 mt-2 leading-relaxed">{insight.note}</p>
+              </div>
+            ))}
+          </div>
+
           {items.length > 0 ? (
             <>
               <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
@@ -371,9 +450,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   {gapSuggestion.suggestedColor} {gapSuggestion.itemType}
                 </p>
                 <p className="text-xs text-slate-500 leading-relaxed">{gapSuggestion.reasoning}</p>
+                <p className="text-[11px] text-indigo-600 font-semibold">
+                  Insight: your lightest coverage today is in {stats.leastRepresentedFamily.toLowerCase()} tones.
+                </p>
               </div>
             ) : (
-              <p className="text-sm text-slate-500">Get one AI recommendation to improve outfit versatility.</p>
+              <div className="space-y-2">
+                <p className="text-sm text-slate-500">Get one AI recommendation to improve outfit versatility.</p>
+                <p className="text-xs text-slate-400">Current nudge: look for more {stats.leastRepresentedFamily.toLowerCase()} options to diversify your palette.</p>
+              </div>
             )}
 
             {gapError && <p className="text-xs text-rose-600 mt-3">{gapError}</p>}
@@ -400,7 +485,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         <p className="text-sm font-bold text-slate-800 mt-1">Added {scan.items.length} items</p>
                       </div>
                       <button 
-                        onClick={() => onDeleteScan(scan.timestamp)}
+                        onClick={() => handleDeleteScan(scan.timestamp, scan.items.length)}
                         className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
                       >
                         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
