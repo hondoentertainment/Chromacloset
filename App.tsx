@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import React, { useState, useEffect } from 'react';
+import type { WardrobeItem } from './types';
 import { Header } from './components/Header';
 import { ScanModule } from './components/ScanModule';
 import { Dashboard } from './components/Dashboard';
@@ -15,52 +15,14 @@ import { isInternalToolsEnabled } from './services/runtimeConfig';
 const AppShell: React.FC = () => {
   const { items, scans, totalScannedCount, savedOutfits, closetIcon, addScanResult, resetCloset } = useCloset();
   const internalToolsEnabled = isInternalToolsEnabled();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'scan' | 'explorer' | 'stylist' | 'internal'>(internalToolsEnabled ? 'dashboard' : 'dashboard');
-import { WardrobeItem, ScanResult, OutfitRecommendation } from './types';
-import type { ScanTelemetry } from './components/ScanModule';
-import { trackEvent } from './services/analyticsService';
-import { clearClosetStorage, loadPersistedClosetState, loadSavedOutfits, savePersistedClosetState, saveSavedOutfits } from './services/storageService';
-
-const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'scan' | 'explorer' | 'stylist'>('dashboard');
-  const [persistedState] = useState(() => loadPersistedClosetState());
-
-  const [items, setItems] = useState<WardrobeItem[]>(persistedState.items);
-  const [scans, setScans] = useState<ScanResult[]>(persistedState.scans);
-  const [totalScannedCount, setTotalScannedCount] = useState<number>(persistedState.totalScannedCount);
-  const [closetIcon, setClosetIcon] = useState<string | null>(persistedState.closetIcon);
-  const [savedOutfits, setSavedOutfits] = useState<OutfitRecommendation[]>(() => loadSavedOutfits());
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'scan' | 'explorer' | 'stylist' | 'internal'>('dashboard');
 
   useEffect(() => {
     trackEvent('app_opened', { source: 'browser' });
   }, []);
 
-  const handleScanComplete = (newItems: typeof items, telemetry?: ScanTelemetry) => {
-    addScanResult(newItems);
-  useEffect(() => {
-    try {
-      savePersistedClosetState({
-        items,
-        scans,
-        totalScannedCount,
-        closetIcon,
-      });
-    } catch (e) {
-      console.warn('Storage quota warning', e);
-    }
-  }, [items, scans, totalScannedCount, closetIcon]);
-
-  useEffect(() => {
-    try {
-      saveSavedOutfits(savedOutfits);
-    } catch (e) {
-      console.warn('Unable to persist saved outfits', e);
-    }
-  }, [savedOutfits]);
-
   const handleScanComplete = (newItems: WardrobeItem[], telemetry?: ScanTelemetry) => {
-    setItems(prev => [...prev, ...newItems]);
-    setTotalScannedCount(prev => prev + newItems.length);
+    addScanResult(newItems);
     if (telemetry) {
       trackEvent('scan_completed', {
         source: telemetry.source,
@@ -69,13 +31,6 @@ const App: React.FC = () => {
         latency_ms: telemetry.latencyMs,
       });
     }
-
-    
-    const newScan: ScanResult = {
-      items: newItems,
-      timestamp: Date.now()
-    };
-    setScans(prev => [newScan, ...prev].slice(0, 20));
     setActiveTab('dashboard');
   };
 
@@ -83,12 +38,6 @@ const App: React.FC = () => {
     if (confirm('Are you sure you want to clear your entire inventory? This cannot be undone.')) {
       trackEvent('closet_reset', { items_before_reset: items.length, scans_before_reset: scans.length });
       resetCloset();
-      setItems([]);
-      setScans([]);
-      setSavedOutfits([]);
-      setTotalScannedCount(0);
-      setClosetIcon(null);
-      clearClosetStorage();
     }
   };
 
@@ -125,16 +74,6 @@ const App: React.FC = () => {
         showInternalTab={internalToolsEnabled}
       />
 
-      />
-
-      <Header 
-        activeTab={activeTab} 
-        setActiveTab={handleTabChange} 
-        closetIcon={closetIcon} 
-        itemsCount={items.length}
-        totalScannedCount={totalScannedCount}
-      />
-      
       <main className="max-w-7xl mx-auto px-4 pb-20 relative">
         <section className="pt-8 pb-4">
           <div className="rounded-[2rem] border border-white/10 bg-white/5 backdrop-blur-2xl shadow-[0_30px_120px_rgba(15,23,42,0.45)] overflow-hidden">
@@ -195,7 +134,6 @@ const App: React.FC = () => {
             {(items.length > 0 || totalScannedCount > 0) && (
               <div className="flex justify-end pt-4 -mb-2">
                 <button
-                <button 
                   onClick={clearCloset}
                   className="text-xs text-slate-400 hover:text-red-300 font-medium transition-colors"
                 >
@@ -211,74 +149,8 @@ const App: React.FC = () => {
         {activeTab === 'explorer' && <ColorExplorer items={items} />}
         {activeTab === 'stylist' && <StylistModule />}
         {activeTab === 'internal' && internalToolsEnabled && <InternalToolsPanel />}
-            <Dashboard
-              items={items}
-              scans={scans}
-              savedOutfits={savedOutfits}
-              onDeleteScan={deleteScan}
-              totalScannedCount={totalScannedCount}
-              closetIcon={closetIcon}
-              onIconUpdate={setClosetIcon}
-              showInternalInsights={import.meta.env.DEV}
-            />
-          </>
-        )}
-
-        {activeTab === 'scan' && (
-          <ScanModule onScanComplete={handleScanComplete} />
-        )}
-
-        {activeTab === 'explorer' && (
-          <ColorExplorer items={items} />
-        )}
-
-        {activeTab === 'stylist' && (
-          <StylistModule items={items} savedOutfits={savedOutfits} onSavedOutfitsChange={setSavedOutfits} />
-        )}
-
-        {items.length === 0 && activeTab === 'dashboard' && (
-          <div className="py-20 flex flex-col items-center justify-center text-center animate-in fade-in duration-700">
-            <div className="w-full max-w-3xl rounded-[2.5rem] border border-white/10 bg-white/5 backdrop-blur-2xl p-10 md:p-14 shadow-[0_40px_120px_rgba(15,23,42,0.5)]">
-              <div className="w-32 h-32 bg-white rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-indigo-100 mb-10 overflow-hidden border-2 border-slate-50 mx-auto">
-                {closetIcon ? (
-                  <img src={closetIcon} alt="Closet Identity" className="w-full h-full object-cover" />
-                ) : (
-                  <svg className="w-12 h-12 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-7.714 2.143L11 21l-2.286-6.857L1 12l7.714-2.143L11 3z" />
-                  </svg>
-                )}
-              {closetIcon ? (
-                <img src={closetIcon} alt="Closet Identity" className="w-full h-full object-cover" />
-              ) : (
-                <svg className="w-12 h-12 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-7.714 2.143L11 21l-2.286-6.857L1 12l7.714-2.143L11 3z" />
-                </svg>
-              )}
-              </div>
-              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">Your virtual closet, redesigned like a luxury operating system.</h2>
-              <p className="text-slate-300 max-w-xl mx-auto mb-10 leading-relaxed text-lg">
-                Scan pieces, understand your color story, and generate polished looks from a workspace built to feel cinematic, fast, and editorial.
-              </p>
-              <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <button
-                  onClick={() => handleTabChange('scan')}
-                  className="px-10 py-5 bg-white text-slate-900 rounded-[1.5rem] font-bold shadow-2xl hover:scale-105 active:scale-95 transition-all text-lg"
-                >
-                  Start First Scan
-                </button>
-                <button
-                  onClick={() => handleTabChange('stylist')}
-                  className="px-10 py-5 border border-white/15 bg-white/5 text-white rounded-[1.5rem] font-bold hover:bg-white/10 transition-all text-lg"
-                >
-                  Explore Styling
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </main>
 
-      
       <footer className="py-12 text-center text-slate-500 text-sm relative">
         <p>&copy; 2026 Chromacloset Wardrobe Intelligence</p>
       </footer>

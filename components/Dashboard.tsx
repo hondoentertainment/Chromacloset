@@ -6,22 +6,7 @@ import { generateClosetIcon } from '../services/geminiService';
 import { analyzeWardrobeGaps } from '../services/stylistService';
 import { trackEvent } from '../services/analyticsService';
 import { useCloset } from '../contexts/ClosetContext';
-import { WardrobeItem, ScanResult, OutfitRecommendation } from '../types';
-import { generateClosetIcon } from '../services/geminiService';
-import { analyzeWardrobeGaps } from '../services/stylistService';
-import { trackEvent } from '../services/analyticsService';
 import { buildProductionReadinessSnapshot } from '../services/productionReadinessService';
-
-interface DashboardProps {
-  items: WardrobeItem[];
-  scans: ScanResult[];
-  savedOutfits: OutfitRecommendation[];
-  onDeleteScan: (timestamp: number) => void;
-  totalScannedCount: number;
-  closetIcon: string | null;
-  onIconUpdate: (iconUrl: string) => void;
-  showInternalInsights?: boolean;
-}
 
 const STYLE_VIBES = [
   { id: 'minimalist', label: 'Minimalist', desc: 'Clean lines, airy space' },
@@ -33,9 +18,6 @@ const STYLE_VIBES = [
 
 export const Dashboard: React.FC = () => {
   const { items, totalScannedCount, closetIcon, savedOutfits, scans, deleteScan, setClosetIcon } = useCloset();
-export const Dashboard: React.FC<DashboardProps> = ({ 
-  items, scans, savedOutfits, onDeleteScan, totalScannedCount, closetIcon, onIconUpdate, showInternalInsights = false
-}) => {
   const [isStudioOpen, setIsStudioOpen] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [selectedVibe, setSelectedVibe] = useState(STYLE_VIBES[0]);
@@ -43,15 +25,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const [isGapLoading, setIsGapLoading] = useState(false);
   const [gapSuggestion, setGapSuggestion] = useState<{ itemType: string; suggestedColor: string; reasoning: string; priority: 'high' | 'medium' | 'low' } | null>(null);
   const [gapError, setGapError] = useState<string | null>(null);
-  const savedOutfits = useMemo(() => {
-    try {
-      const raw = localStorage.getItem('chromacloset_saved_outfits');
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }, []);
 
 
 
@@ -312,7 +285,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
 
 
-      {showInternalInsights && (
+      {import.meta.env.DEV && (
       <section className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm space-y-6">
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
           <div>

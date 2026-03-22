@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { applyEditToItem, applyFieldToSimilarItems, buildScanReviewSummary, createBaselineItems, resetItemToBaseline, sortScanReviewItems } from '../../services/scanReviewService.js';
-import { applyEditToItem, applyFieldToSimilarItems, createBaselineItems, resetItemToBaseline } from '../../services/scanReviewService.js';
 import { Category, PatternType, type WardrobeItem } from '../../types.js';
 
 const item = (id: string, subcategory: string, colorName = 'Navy'): WardrobeItem => ({
