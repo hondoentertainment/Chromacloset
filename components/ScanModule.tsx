@@ -233,6 +233,13 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
         };
         setDetectedItems([item]);
         setBaselineItems(createBaselineItems([item]));
+        setBaselineItems({ [item.id]: {
+          category: item.category,
+          patternType: item.patternType,
+          subcategory: item.subcategory,
+          colorName: item.colorName,
+          colorFamily: item.colorFamily
+        } });
         setLastScanTelemetry({ source: 'live', mode, latencyMs: Date.now() - startTs });
         setScanError(null);
       } else {
@@ -321,6 +328,9 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
   const applyFieldToSimilar = <K extends keyof WardrobeItem>(id: string, field: K, value: WardrobeItem[K]) => {
     if (!detectedItems || !isEditableScanField(field)) return;
     const editableField = field;
+    if (!detectedItems || !['category', 'patternType', 'colorFamily', 'subcategory', 'colorName'].includes(String(field))) return;
+    const source = detectedItems.find(i => i.id === id);
+    if (!source) return;
 
     setDetectedItems(prev => prev ? applyFieldToSimilarItems(prev, id, editableField, value as WardrobeItem[typeof editableField], baselineItems) : prev);
 

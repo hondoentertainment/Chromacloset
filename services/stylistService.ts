@@ -53,6 +53,7 @@ const buildFallbackOutfits = (
   return results;
 };
 
+
 const OUTFIT_SCHEMA = {
   type: Type.OBJECT,
   properties: {
@@ -138,6 +139,7 @@ export const generateOutfits = async (
 
 export const createStylingChat = (items: WardrobeItem[], persona: StylePersona, agentMode: AgentMode = 'Balanced') => {
   const ai = createGeminiClient();
+  const itemManifest = items.map(i => `${i.colorName} ${i.subcategory}`).join(", ");
 
   return ai.chats.create({
     model: AI_RUNTIME_PROFILE.stylistChat.model,

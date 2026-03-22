@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import type { WardrobeItem } from './types';
 import { Header } from './components/Header';
 import { ScanModule } from './components/ScanModule';
 import { Dashboard } from './components/Dashboard';
@@ -15,12 +16,14 @@ const AppShell: React.FC = () => {
   const { items, scans, totalScannedCount, savedOutfits, closetIcon, addScanResult, resetCloset } = useCloset();
   const internalToolsEnabled = isInternalToolsEnabled();
   const [activeTab, setActiveTab] = useState<'dashboard' | 'scan' | 'explorer' | 'stylist' | 'internal'>(internalToolsEnabled ? 'dashboard' : 'dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'scan' | 'explorer' | 'stylist' | 'internal'>('dashboard');
 
   useEffect(() => {
     trackEvent('app_opened', { source: 'browser' });
   }, []);
 
   const handleScanComplete = (newItems: typeof items, telemetry?: ScanTelemetry) => {
+  const handleScanComplete = (newItems: WardrobeItem[], telemetry?: ScanTelemetry) => {
     addScanResult(newItems);
     if (telemetry) {
       trackEvent('scan_completed', {
@@ -54,6 +57,7 @@ const AppShell: React.FC = () => {
     { label: 'Live inventory', value: items.length, icon: 'Closet' },
     { label: 'Lifetime scans', value: totalScannedCount, icon: 'Scans' },
     { label: 'Saved looks', value: savedOutfits.length, icon: 'Looks' },
+    { label: 'Active workspace', value: activeTab.charAt(0).toUpperCase() + activeTab.slice(1), icon: 'View' },
   ];
 
   return (
