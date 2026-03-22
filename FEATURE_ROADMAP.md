@@ -318,3 +318,91 @@ Mitigations:
 4. **PR-4:** Add first personalization signal capture (`outfit_feedback_given`).
 
 This sequence keeps technical risk low while compounding product insight quality each sprint.
+
+---
+
+## Recommended Next 5 Phases (Post-Current Build)
+
+### Phase 6 — Reliability Automation & Release Guardrails
+**Goal:** make regressions harder to ship.
+
+Scope:
+- [x] Add automated tests for analytics storage/export, outfit normalization, and scan edit helpers.
+- [x] Add CI gates for `npm run typecheck`, `npm run build`, and future unit tests.
+- [x] Convert the QA smoke checklist into a PR/release checklist artifact.
+
+Why next:
+- Current roadmap value depends on confidence in telemetry and recommendation behavior.
+- Reliability automation reduces future agent or human patch regressions before they hit main.
+
+Exit criteria:
+- CI blocks merges when build/typecheck/tests fail.
+- Core scan + stylist helpers have repeatable automated coverage.
+
+### Phase 7 — Analytics Transport Adapter & Session Export
+**Goal:** move from local-only observability to portable product analytics.
+
+Scope:
+- [x] Introduce a pluggable analytics transport interface with local-first storage.
+- [x] Add optional remote provider dual-write behind environment flags.
+- [x] Add downloadable JSON/CSV session bundles for QA and stakeholder review.
+
+Why next:
+- Local debug export is a strong first step, but decision-grade metrics need adapter portability and parity checks.
+
+Exit criteria:
+- Same event contract works for local storage and remote adapter.
+- QA can compare local and remote payload parity for a session.
+
+### Phase 8 — Agent Logic & Workflow Hardening
+**Goal:** improve AI and agent behavior, not just UI surfaces.
+
+Scope:
+- [x] Centralize prompt/version management for scan analysis, outfit generation, and chat.
+- [x] Add structured evaluation fixtures for “good outfit,” “bad outfit,” and “scan correction needed” cases.
+- [x] Add agent-specific guardrails: deterministic fallbacks and rollback-safe model/config flags.
+
+Why next:
+- The app now depends more heavily on AI orchestration quality.
+- Improving agent logic reduces brittle outputs and prevents future broad, hard-to-review AI-driven edits.
+
+Exit criteria:
+- Prompt revisions are versioned and testable.
+- Agent changes can be evaluated against fixed fixtures before release.
+
+### Phase 9 — Personalization Ranking Loop
+**Goal:** turn saved/liked/skipped behavior into better recommendations.
+
+Scope:
+- [x] Weight recommendation ranking using `outfit_feedback_given`, saves, unsaves, and current learned preference signals.
+- [x] Add preference memory by persona, occasion, and weather context.
+- [x] Surface “because you liked…” rationale in the stylist UI.
+
+Why next:
+- Feedback capture exists; ranking should start learning from it.
+
+Exit criteria:
+- Outfit ordering changes based on user preference history.
+- Recommendation rationale references learned signals.
+
+### Phase 10 — Multi-Session Planning & Sync Foundations
+**Goal:** extend utility beyond one-off outfit generation.
+
+Scope:
+- Add weekly planning/daypart suggestions.
+- Introduce lightweight sync-ready storage boundaries for inventory, outfits, and analytics.
+- Prepare conflict-safe merge rules for future cross-device support.
+
+Why next:
+- Planning and continuity are the most natural retention expansion after personalization.
+
+Exit criteria:
+- Users can build or revisit outfit plans across multiple sessions.
+- Storage model is ready for future sync work without major schema rewrites.
+
+### Recommended execution order
+1. Phase 6 first, because it reduces delivery risk for all later phases.
+2. Phase 7 next, so metrics remain trustworthy as the app grows.
+3. Phase 8 before major personalization, so agent logic is versioned and testable.
+4. Phase 9 once evaluation and telemetry foundations are in place.
+5. Phase 10 after ranking quality is good enough to justify multi-session planning.

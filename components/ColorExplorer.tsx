@@ -13,19 +13,43 @@ export const ColorExplorer: React.FC<ColorExplorerProps> = ({ items }) => {
   const filteredItems = selectedFamily 
     ? items.filter(i => i.colorFamily === selectedFamily)
     : items;
+  const paletteCoverage = families.length > 0 ? Math.min(100, Math.round((families.length / 10) * 100)) : 0;
 
   return (
     <div className="py-8 space-y-8 animate-in fade-in duration-500">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Color Spectrum</h2>
-          <p className="text-slate-500 text-sm">Analyze every shade and hue in your collection.</p>
+      <div className="rounded-[2.5rem] border border-white/10 bg-white/5 backdrop-blur-2xl p-8 md:p-10 shadow-[0_30px_90px_rgba(15,23,42,0.35)]">
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
+          <div className="space-y-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-4 py-1.5 text-xs font-black uppercase tracking-[0.24em] text-cyan-200">
+              Chromatic intelligence
+            </div>
+            <div>
+              <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">Color Spectrum</h2>
+              <p className="text-slate-300 text-sm md:text-base max-w-2xl mt-2">
+                Analyze every shade, family, and pattern in your collection through a gallery designed like an editorial materials board.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {[
+              { label: 'Visible items', value: filteredItems.length },
+              { label: 'Color families', value: families.length },
+              { label: 'Palette coverage', value: `${paletteCoverage}%` },
+            ].map((stat) => (
+              <div key={stat.label} className="rounded-2xl border border-white/10 bg-slate-900/50 px-4 py-3">
+                <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{stat.label}</p>
+                <p className="mt-2 text-xl font-black text-white">{stat.value}</p>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
+
+        <div className="flex flex-wrap gap-2 mt-8">
           <button
             onClick={() => setSelectedFamily(null)}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${
-              selectedFamily === null ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'bg-white text-slate-600 border border-slate-200 hover:border-indigo-300'
+            className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+              selectedFamily === null ? 'bg-white text-slate-950 shadow-md' : 'bg-white/5 text-slate-200 border border-white/10 hover:border-cyan-300/40'
             }`}
           >
             All
@@ -34,8 +58,8 @@ export const ColorExplorer: React.FC<ColorExplorerProps> = ({ items }) => {
             <button
               key={family}
               onClick={() => setSelectedFamily(family)}
-              className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${
-                selectedFamily === family ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'bg-white text-slate-600 border border-slate-200 hover:border-indigo-300'
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                selectedFamily === family ? 'bg-white text-slate-950 shadow-md' : 'bg-white/5 text-slate-200 border border-white/10 hover:border-cyan-300/40'
               }`}
             >
               {family}
@@ -46,7 +70,7 @@ export const ColorExplorer: React.FC<ColorExplorerProps> = ({ items }) => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredItems.map(item => (
-          <div key={item.id} className="group bg-white rounded-2xl overflow-hidden border border-slate-100 shadow-sm hover:shadow-md transition-all">
+          <div key={item.id} className="group bg-white/90 backdrop-blur-xl rounded-[2rem] overflow-hidden border border-white/20 shadow-[0_24px_70px_rgba(15,23,42,0.18)] hover:-translate-y-1 hover:shadow-[0_32px_90px_rgba(15,23,42,0.24)] transition-all">
             <div className="relative h-48">
               <div 
                 className="absolute inset-0 flex items-center justify-center"
@@ -58,7 +82,7 @@ export const ColorExplorer: React.FC<ColorExplorerProps> = ({ items }) => {
                   </span>
                 </div>
               </div>
-              <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-sm px-2 py-1 rounded text-[10px] font-bold text-slate-900 shadow-sm uppercase">
+              <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-full text-[10px] font-bold text-slate-900 shadow-sm uppercase">
                 {item.category}
               </div>
               <div className="absolute bottom-4 right-4 bg-black/40 backdrop-blur-sm px-2 py-1 rounded-full text-[10px] font-bold text-white flex items-center gap-1">
@@ -72,6 +96,14 @@ export const ColorExplorer: React.FC<ColorExplorerProps> = ({ items }) => {
                   <h4 className="text-lg font-bold text-slate-900 capitalize">{item.colorName} {item.subcategory}</h4>
                   <p className="text-sm text-slate-500 font-medium">{item.brand !== 'Unknown' ? item.brand : 'Basic Item'}</p>
                 </div>
+              </div>
+              <div className="flex flex-wrap gap-2 py-3">
+                <span className="px-2.5 py-1 rounded-full bg-slate-100 text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                  {item.colorFamily}
+                </span>
+                <span className="px-2.5 py-1 rounded-full bg-cyan-50 text-[10px] font-bold uppercase tracking-wider text-cyan-700">
+                  {item.patternType}
+                </span>
               </div>
               <div className="flex items-center gap-3 pt-4 border-t border-slate-50">
                 <div className="flex flex-col gap-1 flex-1">
@@ -87,6 +119,13 @@ export const ColorExplorer: React.FC<ColorExplorerProps> = ({ items }) => {
           </div>
         ))}
       </div>
+
+      {filteredItems.length === 0 && (
+        <div className="rounded-[2rem] border border-dashed border-white/15 bg-white/5 backdrop-blur-xl p-12 text-center">
+          <p className="text-lg font-bold text-white">No pieces match this family yet.</p>
+          <p className="text-sm text-slate-400 mt-2">Try another filter or scan more inventory to expand your color landscape.</p>
+        </div>
+      )}
     </div>
   );
 };

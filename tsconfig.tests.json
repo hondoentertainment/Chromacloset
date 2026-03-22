@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": ".tmp-tests",
+    "rootDir": ".",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "types": ["node", "vite/client"],
+    "allowImportingTsExtensions": false
+  },
+  "include": [
+    "tests/**/*.ts",
+    "services/**/*.ts",
+    "types.ts"
+  ]
+}
