@@ -3,6 +3,7 @@ import { WardrobeItem, OutfitRecommendation, WardrobeGap, StylePersona, Category
 import { AGENT_MODE_CONFIG, AI_RUNTIME_PROFILE, buildOutfitGenerationPrompt, buildStylingChatSystemInstruction, buildWardrobeGapPrompt } from "./aiConfig.js";
 import { createGeminiClient } from "./aiClient.js";
 import { getWeatherFocus, normalizeOutfits } from "./stylistLogic.js";
+
 const buildFallbackOutfits = (
   items: WardrobeItem[],
   occasion: string,
@@ -39,6 +40,8 @@ const buildFallbackOutfits = (
         occasion,
         styleVibe: persona,
         weatherFocus,
+        generationSource: 'fallback',
+        generationVersion: AI_RUNTIME_PROFILE.outfitGeneration.promptVersion,
       });
 
       if (results.length === 3) {

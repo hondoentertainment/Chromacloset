@@ -15,12 +15,14 @@ import { isInternalToolsEnabled } from './services/runtimeConfig';
 const AppShell: React.FC = () => {
   const { items, scans, totalScannedCount, savedOutfits, closetIcon, addScanResult, resetCloset } = useCloset();
   const internalToolsEnabled = isInternalToolsEnabled();
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'scan' | 'explorer' | 'stylist' | 'internal'>(internalToolsEnabled ? 'dashboard' : 'dashboard');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'scan' | 'explorer' | 'stylist' | 'internal'>('dashboard');
 
   useEffect(() => {
     trackEvent('app_opened', { source: 'browser' });
   }, []);
 
+  const handleScanComplete = (newItems: typeof items, telemetry?: ScanTelemetry) => {
   const handleScanComplete = (newItems: WardrobeItem[], telemetry?: ScanTelemetry) => {
     addScanResult(newItems);
     if (telemetry) {
@@ -149,6 +151,40 @@ const AppShell: React.FC = () => {
         {activeTab === 'explorer' && <ColorExplorer items={items} />}
         {activeTab === 'stylist' && <StylistModule />}
         {activeTab === 'internal' && internalToolsEnabled && <InternalToolsPanel />}
+
+        {items.length === 0 && activeTab === 'dashboard' && (
+          <div className="py-20 flex flex-col items-center justify-center text-center animate-in fade-in duration-700">
+            <div className="w-full max-w-3xl rounded-[2.5rem] border border-white/10 bg-white/5 backdrop-blur-2xl p-10 md:p-14 shadow-[0_40px_120px_rgba(15,23,42,0.5)]">
+              <div className="w-32 h-32 bg-white rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-indigo-100 mb-10 overflow-hidden border-2 border-slate-50 mx-auto">
+                {closetIcon ? (
+                  <img src={closetIcon} alt="Closet Identity" className="w-full h-full object-cover" />
+                ) : (
+                  <svg className="w-12 h-12 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-7.714 2.143L11 21l-2.286-6.857L1 12l7.714-2.143L11 3z" />
+                  </svg>
+                )}
+              </div>
+              <h2 className="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">Your virtual closet, redesigned like a luxury operating system.</h2>
+              <p className="text-slate-300 max-w-xl mx-auto mb-10 leading-relaxed text-lg">
+                Scan pieces, understand your color story, and generate polished looks from a workspace built to feel cinematic, fast, and editorial.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                <button
+                  onClick={() => handleTabChange('scan')}
+                  className="px-10 py-5 bg-white text-slate-900 rounded-[1.5rem] font-bold shadow-2xl hover:scale-105 active:scale-95 transition-all text-lg"
+                >
+                  Start First Scan
+                </button>
+                <button
+                  onClick={() => handleTabChange('stylist')}
+                  className="px-10 py-5 border border-white/15 bg-white/5 text-white rounded-[1.5rem] font-bold hover:bg-white/10 transition-all text-lg"
+                >
+                  Explore Styling
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
 
       <footer className="py-12 text-center text-slate-500 text-sm relative">

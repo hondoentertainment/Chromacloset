@@ -300,6 +300,7 @@ export const StylistModule: React.FC = () => {
         generateOutfits(items, occasion, persona, weather || undefined, agentMode),
         new Promise<never>((_, reject) => {
           window.setTimeout(() => reject(new Error('timeout')), activeProfile.timeoutMs);
+        })
         }),
       ]);
 
@@ -342,6 +343,7 @@ export const StylistModule: React.FC = () => {
   };
 
   const updateOutfitUsage = (id: string) => {
+    setSavedOutfits(prev => prev.map(o =>
     onSavedOutfitsChange(prev => prev.map(o =>
       o.id === id ? { ...o, lastWorn: Date.now() } : o
     ));
@@ -349,6 +351,7 @@ export const StylistModule: React.FC = () => {
   };
 
   const updateOutfitNotes = (id: string, notes: string) => {
+    setSavedOutfits(prev => prev.map(o =>
     onSavedOutfitsChange(prev => prev.map(o =>
       o.id === id ? { ...o, userNotes: notes } : o
     ));
