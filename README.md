@@ -2,7 +2,7 @@
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>
 
-# Run and deploy your AI Studio app
+# Run and deploy Chromacloset
 
 This contains everything you need to run your app locally.
 
@@ -18,6 +18,17 @@ View your app in AI Studio: https://ai.studio/apps/drive/1QM8jKwMdH1TzMK1hJ8E1H2
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+
+## Deploy to Vercel
+
+This repo now includes a root [`vercel.json`](./vercel.json) configured for a Vite production build:
+
+1. Import the repo into Vercel.
+2. Set the `GEMINI_API_KEY` environment variable in the Vercel project.
+3. Optionally set `VITE_ANALYTICS_REMOTE_ENABLED` and `VITE_ANALYTICS_REMOTE_ENDPOINT` if you want remote analytics dual-write in production.
+4. Deploy with the default build settings from `vercel.json` (`npm install` → `npm run build` → `dist` output).
+
+The rewrite rule sends all routes to `index.html`, which keeps the SPA shell working correctly behind Vercel.
 
 
 ## Product planning
