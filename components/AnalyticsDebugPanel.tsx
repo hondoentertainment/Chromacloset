@@ -60,6 +60,18 @@ export const AnalyticsDebugPanel: React.FC = () => {
     setStatusMessage(`${label} downloaded.`);
   };
 
+  const handleExport = async (format: 'json' | 'csv') => {
+    const content = exportTrackedEvents(format);
+    if (!content) return;
+
+    try {
+      await navigator.clipboard.writeText(content);
+      setRefreshTick((t) => t + 1);
+    } catch (error) {
+      console.warn('Unable to copy analytics export', error);
+    }
+  };
+
   if (!import.meta.env.DEV) {
     return null;
   }

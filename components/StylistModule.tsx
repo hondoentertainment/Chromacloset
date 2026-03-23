@@ -6,6 +6,12 @@ import { trackEvent } from '../services/analyticsService';
 import { buildPreferenceMemory, getStyleBriefSuggestion, rerankOutfitsWithPreferences } from '../services/personalizationService';
 import { useCloset } from '../contexts/ClosetContext';
 
+interface StylistModuleProps {
+  items: WardrobeItem[];
+  savedOutfits: OutfitRecommendation[];
+  onSavedOutfitsChange: React.Dispatch<React.SetStateAction<OutfitRecommendation[]>>;
+}
+
 const PERSONAS: StylePersona[] = ['Minimalist', 'Streetwear', 'Classic Professional', 'Bohemian', 'Quiet Luxury', 'Bold & Eclectic'];
 const AGENT_MODES: Array<{ mode: AgentMode; title: string; desc: string }> = [
   { mode: 'Precision', title: 'Precision Agent', desc: 'Optimizes for practicality, compatibility, and low-risk outfit confidence.' },
@@ -186,6 +192,7 @@ const OutfitCard: React.FC<OutfitCardProps> = ({
 
 export const StylistModule: React.FC = () => {
   const { items, savedOutfits, setSavedOutfits } = useCloset();
+  const onSavedOutfitsChange = setSavedOutfits;
   const [occasion, setOccasion] = useState('Casual Weekend');
   const [persona, setPersona] = useState<StylePersona>('Minimalist');
   const [agentMode, setAgentMode] = useState<AgentMode>('Balanced');
@@ -294,6 +301,7 @@ export const StylistModule: React.FC = () => {
         new Promise<never>((_, reject) => {
           window.setTimeout(() => reject(new Error('timeout')), activeProfile.timeoutMs);
         })
+        }),
       ]);
 
       if (!result.length) {
@@ -323,12 +331,12 @@ export const StylistModule: React.FC = () => {
   const toggleSaveOutfit = (outfit: OutfitRecommendation) => {
     const isAlreadySaved = savedOutfits.some(o => o.id === outfit.id);
     if (isAlreadySaved) {
-      setSavedOutfits(prev => prev.filter(o => o.id !== outfit.id));
+      onSavedOutfitsChange(prev => prev.filter(o => o.id !== outfit.id));
       trackEvent('outfit_unsaved', { outfit_id: outfit.id });
       showToast("Removed from Lookbook");
     } else {
       const newOutfit = { ...outfit, isSaved: true, dateSaved: Date.now() };
-      setSavedOutfits(prev => [newOutfit, ...prev]);
+      onSavedOutfitsChange(prev => [newOutfit, ...prev]);
       trackEvent('outfit_saved', { outfit_id: outfit.id });
       showToast("Added to Lookbook ✨");
     }
@@ -336,6 +344,7 @@ export const StylistModule: React.FC = () => {
 
   const updateOutfitUsage = (id: string) => {
     setSavedOutfits(prev => prev.map(o =>
+    onSavedOutfitsChange(prev => prev.map(o =>
       o.id === id ? { ...o, lastWorn: Date.now() } : o
     ));
     showToast("Outfit marked as worn today!");
@@ -343,6 +352,7 @@ export const StylistModule: React.FC = () => {
 
   const updateOutfitNotes = (id: string, notes: string) => {
     setSavedOutfits(prev => prev.map(o =>
+    onSavedOutfitsChange(prev => prev.map(o =>
       o.id === id ? { ...o, userNotes: notes } : o
     ));
   };
@@ -350,7 +360,7 @@ export const StylistModule: React.FC = () => {
 
   const setOutfitFeedback = (id: string, feedback: 'love' | 'skip', source: 'curator' | 'lookbook') => {
     setOutfits(prev => prev.map(o => o.id === id ? { ...o, outfitFeedback: feedback } : o));
-    setSavedOutfits(prev => prev.map(o => o.id === id ? { ...o, outfitFeedback: feedback } : o));
+    onSavedOutfitsChange(prev => prev.map(o => o.id === id ? { ...o, outfitFeedback: feedback } : o));
     trackEvent('outfit_feedback_given', { outfit_id: id, feedback, source });
     showToast(feedback === 'love' ? 'Preference saved: Love this look' : 'Preference saved: Skip this look');
   };
@@ -385,6 +395,7 @@ export const StylistModule: React.FC = () => {
               { label: 'Top signal', value: preferenceMemory.topColorFamilies[0] || 'Learning' },
               { label: 'Fallback path', value: activeProfile.fallbackStrategy },
               { label: 'Loved looks', value: preferenceMemory.lovedOutfitCount },
+              { label: 'Occasion', value: occasion },
             ].map((card) => (
               <div key={card.label} className="rounded-2xl border border-white/10 bg-slate-900/50 px-4 py-3">
                 <p className="text-[10px] font-black uppercase tracking-[0.22em] text-slate-400">{card.label}</p>
