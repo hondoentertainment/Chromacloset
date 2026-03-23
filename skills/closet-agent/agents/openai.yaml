@@ -1,0 +1,7 @@
+interface:
+  display_name: "Closet Agent"
+  short_description: "Coordinate Chromacloset work across focused product lanes"
+  default_prompt: "Use $closet-agent to split this Chromacloset task into the right scan, stylist, data, insights, and release workstreams."
+
+policy:
+  allow_implicit_invocation: true

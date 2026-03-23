@@ -1,5 +1,57 @@
-import { GoogleGenAI, Type } from "@google/genai";
-import { WardrobeItem, OutfitRecommendation, WardrobeGap, StylePersona, Category } from "../types";
+import { Type } from "@google/genai";
+import { WardrobeItem, OutfitRecommendation, WardrobeGap, StylePersona, Category, AgentMode } from "../types.js";
+import { AGENT_MODE_CONFIG, AI_RUNTIME_PROFILE, buildOutfitGenerationPrompt, buildStylingChatSystemInstruction, buildWardrobeGapPrompt } from "./aiConfig.js";
+import { createGeminiClient } from "./aiClient.js";
+import { getWeatherFocus, normalizeOutfits } from "./stylistLogic.js";
+
+const buildFallbackOutfits = (
+  items: WardrobeItem[],
+  occasion: string,
+  persona: StylePersona,
+  weather?: string,
+  agentMode: AgentMode = 'Balanced'
+): OutfitRecommendation[] => {
+  const tops = items.filter((item) => item.category === Category.TOP);
+  const bottoms = items.filter((item) => item.category === Category.BOTTOM);
+  const outerwear = items.filter((item) => item.category === Category.OUTERWEAR);
+  const shoes = items.filter((item) => item.category === Category.SHOES);
+  const accessories = items.filter((item) => item.category === Category.ACCESSORIES);
+  const weatherFocus = getWeatherFocus(weather);
+  const results: OutfitRecommendation[] = [];
+  const seenSignatures = new Set<string>();
+
+  for (const top of tops) {
+    for (const bottom of bottoms) {
+      const itemIds = [top.id, bottom.id];
+      if (weatherFocus !== 'warm' && outerwear[0]) itemIds.push(outerwear[0].id);
+      if (shoes[0]) itemIds.push(shoes[0].id);
+      if (accessories[0] && weatherFocus !== 'rain') itemIds.push(accessories[0].id);
+
+      const signature = [...itemIds].sort().join('|');
+      if (seenSignatures.has(signature)) continue;
+      seenSignatures.add(signature);
+
+      results.push({
+        id: `fallback-${results.length}`,
+        title: `${agentMode} ${persona} ${occasion} Look ${results.length + 1}`,
+        description: `${top.colorName} ${top.subcategory} paired with ${bottom.colorName} ${bottom.subcategory}.`,
+        stylistTip: `${AGENT_MODE_CONFIG[agentMode].instructions} Lead with balance: anchor the look with a ${top.colorFamily.toLowerCase()} top and build around it for ${occasion.toLowerCase()}.`,
+        itemIds,
+        occasion,
+        styleVibe: persona,
+        weatherFocus,
+        generationSource: 'fallback',
+        generationVersion: AI_RUNTIME_PROFILE.outfitGeneration.promptVersion,
+      });
+
+      if (results.length === 3) {
+        return results;
+      }
+    }
+  }
+
+  return results;
+};
 
 const OUTFIT_SCHEMA = {
   type: Type.OBJECT,
@@ -18,44 +70,29 @@ const OUTFIT_SCHEMA = {
   required: ["id", "title", "description", "stylistTip", "itemIds", "occasion", "styleVibe"]
 };
 
-const normalizeOutfits = (raw: OutfitRecommendation[], items: WardrobeItem[]): OutfitRecommendation[] => {
-  const byId = new Map(items.map(i => [i.id, i]));
-  const seenSignatures = new Set<string>();
-
-  return raw
-    .map((outfit, idx) => {
-      const validItemIds = outfit.itemIds.filter(id => byId.has(id));
-      const categories = new Set(validItemIds.map(id => byId.get(id)?.category));
-
-      const hasTop = categories.has(Category.TOP);
-      const hasBottom = categories.has(Category.BOTTOM);
-      const isValidComposition = hasTop && hasBottom;
-
-      if (!isValidComposition || validItemIds.length < 2) return null;
-
-      const signature = [...validItemIds].sort().join('|');
-      if (seenSignatures.has(signature)) return null;
-      seenSignatures.add(signature);
-
-      return {
-        ...outfit,
-        id: outfit.id || `outfit-${Date.now()}-${idx}`,
-        itemIds: validItemIds,
-      };
-    })
-    .filter((o): o is OutfitRecommendation => Boolean(o));
-};
+export const getActiveStylistProfile = (agentMode: AgentMode) => ({
+  agentMode,
+  title: AGENT_MODE_CONFIG[agentMode].title,
+  description: AGENT_MODE_CONFIG[agentMode].description,
+  promptVersion: AI_RUNTIME_PROFILE.outfitGeneration.promptVersion,
+  chatPromptVersion: AI_RUNTIME_PROFILE.stylistChat.promptVersion,
+  generationModel: AI_RUNTIME_PROFILE.outfitGeneration.model,
+  chatModel: AI_RUNTIME_PROFILE.stylistChat.model,
+  timeoutMs: AI_RUNTIME_PROFILE.outfitGeneration.timeoutMs,
+  fallbackStrategy: 'deterministic_capsule_builder',
+});
 
 // Create a new GoogleGenAI instance inside each function to ensure it always uses the most current API key from process.env.
 export const generateOutfits = async (
   items: WardrobeItem[],
   occasion: string,
   persona: StylePersona,
-  weather?: string
+  weather?: string,
+  agentMode: AgentMode = 'Balanced'
 ): Promise<OutfitRecommendation[]> => {
   if (items.length < 2) return [];
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = createGeminiClient();
 
   const itemManifest = items.map(i => ({
     id: i.id,
@@ -63,18 +100,18 @@ export const generateOutfits = async (
     family: i.colorFamily
   }));
 
-  const weatherContext = weather ? `The current weather is ${weather}.` : "";
-
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: AI_RUNTIME_PROFILE.outfitGeneration.model,
       contents: {
         parts: [{
-          text: `You are a high-end fashion concierge. The user's style persona is "${persona}".
-          Using ONLY these wardrobe items: ${JSON.stringify(itemManifest)}, curate 3 outfits for "${occasion}".
-          ${weatherContext}
-          Every outfit MUST include at least one top and one bottom.
-          Return a JSON array. Each outfit must include a "stylistTip" that references color theory or styling principles.`
+          text: buildOutfitGenerationPrompt({
+            persona,
+            agentMode,
+            occasion,
+            weather,
+            itemManifest,
+          })
         }]
       },
       config: {
@@ -87,33 +124,33 @@ export const generateOutfits = async (
     });
 
     const parsed = JSON.parse(response.text || "[]") as OutfitRecommendation[];
-    return normalizeOutfits(parsed, items);
+    const normalized = normalizeOutfits(parsed, items, weather).map((outfit) => ({
+      ...outfit,
+      generationSource: 'model' as const,
+      generationVersion: AI_RUNTIME_PROFILE.outfitGeneration.promptVersion,
+    }));
+    return normalized.length > 0 ? normalized : buildFallbackOutfits(items, occasion, persona, weather, agentMode);
   } catch (error) {
     console.error("Stylist Error:", error);
-    return [];
+    return buildFallbackOutfits(items, occasion, persona, weather, agentMode);
   }
 };
 
-// Ensure GoogleGenAI instance is fresh for chat session creation.
-export const createStylingChat = (items: WardrobeItem[], persona: StylePersona) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const itemManifest = items.map(i => `${i.colorName} ${i.subcategory}`).join(", ");
+export const createStylingChat = (items: WardrobeItem[], persona: StylePersona, agentMode: AgentMode = 'Balanced') => {
+  const ai = createGeminiClient();
 
   return ai.chats.create({
-    model: 'gemini-3-pro-preview',
+    model: AI_RUNTIME_PROFILE.stylistChat.model,
     config: {
-      systemInstruction: `You are the Chromacloset Style Concierge. The user has these items: ${itemManifest}.
-      Their style persona is ${persona}. Help them with specific styling questions, outfit advice, and mixing colors.
-      Be encouraging, sophisticated, and concise. Always suggest specific items from their inventory when possible.`
+      systemInstruction: buildStylingChatSystemInstruction(items, persona, agentMode)
     }
   });
 };
 
-// Ensure GoogleGenAI instance is fresh for search grounding requests.
 export const searchForGapItems = async (gap: WardrobeGap) => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = createGeminiClient();
   const response = await ai.models.generateContent({
-    model: "gemini-3-pro-preview",
+    model: AI_RUNTIME_PROFILE.shoppingSearch.model,
     contents: `Find shopping recommendations for a ${gap.suggestedColor} ${gap.itemType}. Focus on brands like Everlane, Uniqlo, or high-quality basics.`,
     config: {
       tools: [{ googleSearch: {} }]
@@ -127,11 +164,10 @@ export const searchForGapItems = async (gap: WardrobeGap) => {
   };
 };
 
-// Ensure GoogleGenAI instance is fresh for wardrobe analysis.
 export const analyzeWardrobeGaps = async (items: WardrobeItem[]): Promise<WardrobeGap[]> => {
   if (items.length === 0) return [];
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = createGeminiClient();
   const itemManifest = items.map(i => ({
     category: i.category,
     type: i.subcategory,
@@ -141,10 +177,10 @@ export const analyzeWardrobeGaps = async (items: WardrobeItem[]): Promise<Wardro
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: AI_RUNTIME_PROFILE.wardrobeGaps.model,
       contents: {
         parts: [{
-          text: `Closet data: ${JSON.stringify(itemManifest)}. Identify 3 missing versatile basics that would enhance this specific collection.`
+          text: buildWardrobeGapPrompt(itemManifest)
         }]
       },
       config: {
@@ -157,7 +193,7 @@ export const analyzeWardrobeGaps = async (items: WardrobeItem[]): Promise<Wardro
               itemType: { type: Type.STRING },
               suggestedColor: { type: Type.STRING },
               reasoning: { type: Type.STRING },
-              priority: { type: Type.STRING, enum: ['high', 'medium', 'low'] }
+              priority: { type: Type.STRING }
             },
             required: ["itemType", "suggestedColor", "reasoning", "priority"]
           }
@@ -165,8 +201,9 @@ export const analyzeWardrobeGaps = async (items: WardrobeItem[]): Promise<Wardro
       }
     });
 
-    return JSON.parse(response.text || "[]");
+    return JSON.parse(response.text || '[]') as WardrobeGap[];
   } catch (error) {
+    console.error('Wardrobe gap analysis error:', error);
     return [];
   }
 };
