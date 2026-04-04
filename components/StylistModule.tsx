@@ -5,6 +5,7 @@ import { WardrobeItem, OutfitRecommendation, WardrobeGap, StylePersona, ChatMess
 import { trackEvent } from '../services/analyticsService';
 import { buildPreferenceMemory, getStyleBriefSuggestion, rerankOutfitsWithPreferences } from '../services/personalizationService';
 import { useCloset } from '../contexts/ClosetContext';
+import { getChatFailureMessage, getOutfitGenerationFailureMessage } from '../services/errorTelemetryService';
 
 interface StylistModuleProps {
   items: WardrobeItem[];
@@ -251,12 +252,17 @@ export const StylistModule: React.FC = () => {
     setTimeout(() => setToast(null), 3000);
   };
 
+  const reinitializeChatSession = () => {
+    chatSessionRef.current = createStylingChat(items, persona, agentMode);
+    setChatError(null);
+  };
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userInput.trim() || isSending) return;
     if (!chatSessionRef.current) {
       trackEvent('chat_failed', { reason: 'session_unavailable', persona });
-      setChatError('The style consultant is not ready yet. Close and reopen chat to retry.');
+      setChatError(getChatFailureMessage('session_unavailable'));
       return;
     }
 
@@ -273,7 +279,7 @@ export const StylistModule: React.FC = () => {
       setChatMessages(prev => [...prev, modelMsg]);
     } catch (err) {
       trackEvent('chat_failed', { reason: 'send_error', persona });
-      setChatError('Message failed to send. Please retry in a moment.');
+      setChatError(getChatFailureMessage('send_error'));
       console.error(err);
     } finally {
       setIsSending(false);
@@ -282,8 +288,9 @@ export const StylistModule: React.FC = () => {
 
   const handleGenerate = async () => {
     if (items.length < 2) {
-      trackEvent('outfits_generation_failed', { reason: 'insufficient_inventory', persona, occasion });
-      setGenerationError('Add at least one top and one bottom before generating outfits.');
+      const reason = 'insufficient_inventory' as const;
+      trackEvent('outfits_generation_failed', { reason, persona, occasion });
+      setGenerationError(getOutfitGenerationFailureMessage(reason));
       return;
     }
 
@@ -304,8 +311,9 @@ export const StylistModule: React.FC = () => {
       ]);
 
       if (!result.length) {
-        trackEvent('outfits_generation_failed', { reason: 'empty_result', persona, occasion });
-        setGenerationError('We could not build a complete look from the current inventory. Try a new occasion or add more staples.');
+        const reason = 'empty_result' as const;
+        trackEvent('outfits_generation_failed', { reason, persona, occasion });
+        setGenerationError(getOutfitGenerationFailureMessage(reason));
         return;
       }
 
@@ -316,11 +324,7 @@ export const StylistModule: React.FC = () => {
     } catch (error) {
       const reason = error instanceof Error && error.message === 'timeout' ? 'timeout' : 'service_error';
       trackEvent('outfits_generation_failed', { reason, persona, occasion });
-      setGenerationError(
-        reason === 'timeout'
-          ? 'Outfit generation timed out. Retry now or simplify the request.'
-          : 'We could not generate outfits right now. Please retry.'
-      );
+      setGenerationError(getOutfitGenerationFailureMessage(reason));
       showToast("Style engine is warming up.");
     } finally {
       setLoading(false);
@@ -470,7 +474,13 @@ export const StylistModule: React.FC = () => {
             {isSending && <div className="text-xs text-slate-400 animate-pulse">Consultant is thinking...</div>}
             {chatError && (
               <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
-                {chatError}
+                <p>{chatError}</p>
+                <button
+                  onClick={reinitializeChatSession}
+                  className="mt-2 rounded-lg bg-rose-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-rose-700"
+                >
+                  Reinitialize chat
+                </button>
               </div>
             )}
             <div ref={scrollRef} />
