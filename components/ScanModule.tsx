@@ -4,6 +4,7 @@ import { analyzeClosetImage, processQRCode } from '../services/geminiService';
 import { WardrobeItem, Category, PatternType, BoundingBox } from '../types';
 import { trackEvent } from '../services/analyticsService';
 import { applyEditToItem, applyFieldToSimilarItems, buildScanReviewSummary, createBaselineItems, isEditableScanField, resetItemToBaseline as resetScanItemToBaseline, sortScanReviewItems } from '../services/scanReviewService.js';
+import { getScanFailureMessage, type ScanFailureReason } from '../services/errorTelemetryService';
 
 export type ScanMode = 'cloth' | 'qr';
 
@@ -35,6 +36,11 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
   const [processingHint, setProcessingHint] = useState<string | null>(null);
   const orderedDetectedItems = detectedItems ? sortScanReviewItems(detectedItems) : [];
   const reviewSummary = detectedItems ? buildScanReviewSummary(detectedItems) : null;
+  const reportScanFailure = (source: 'upload' | 'live', reason: ScanFailureReason) => {
+    trackEvent('scan_failed', { source, mode, reason });
+    setScanError(getScanFailureMessage(reason, source, mode));
+    setScanErrorSource(source);
+  };
 
   const mapScanResultToItem = (res: any, index: number, imageUrl: string): WardrobeItem => ({
     id: `item-${Date.now()}-${index}`,
@@ -105,8 +111,7 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
       }
     } catch (err) {
       console.error("Camera access denied", err);
-      setScanError('Camera access is blocked. Enable camera permission or use upload instead.');
-      setScanErrorSource('live');
+      reportScanFailure('live', 'capture_error');
     }
   };
 
@@ -144,9 +149,7 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
       if (mode === 'cloth') {
         const results = await analyzeClosetImage(base64);
         if (!results.length) {
-          trackEvent('scan_failed', { source: 'upload', mode, reason: 'empty_result' });
-          setScanError('No items were confidently detected. Try a brighter image or adjust the framing.');
-          setScanErrorSource('upload');
+          reportScanFailure('upload', 'empty_result');
           setDetectedItems(null);
           return;
         }
@@ -158,9 +161,7 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
       } else {
         const res = await processQRCode(base64);
         if (!res) {
-          trackEvent('scan_failed', { source: 'upload', mode, reason: 'empty_result' });
-          setScanError('We could not read that tag. Try centering the code or upload a sharper image.');
-          setScanErrorSource('upload');
+          reportScanFailure('upload', 'empty_result');
           setDetectedItems(null);
           return;
         }
@@ -184,9 +185,7 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
         setScanError(null);
       }
     } catch (error) {
-      trackEvent('scan_failed', { source: 'upload', mode, reason: 'processing_error' });
-      setScanError('Upload scan failed. Try a clearer image or retry.');
-      setScanErrorSource('upload');
+      reportScanFailure('upload', 'processing_error');
     } finally {
       setIsProcessing(false);
     }
@@ -195,9 +194,7 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
   const handleLiveScan = async () => {
     const base64 = captureFrame();
     if (!base64) {
-      trackEvent('scan_failed', { source: 'live', mode, reason: 'capture_error' });
-      setScanError('Camera capture failed. Please retry.');
-      setScanErrorSource('live');
+      reportScanFailure('live', 'capture_error');
       return;
     }
     const startTs = Date.now();
@@ -211,9 +208,7 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
       if (mode === 'qr') {
         const res = await processQRCode(base64);
         if (!res) {
-          trackEvent('scan_failed', { source: 'live', mode, reason: 'empty_result' });
-          setScanError('No tag data was detected. Reposition the code in frame and retry.');
-          setScanErrorSource('live');
+          reportScanFailure('live', 'empty_result');
           setDetectedItems(null);
           return;
         }
@@ -233,21 +228,12 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
         };
         setDetectedItems([item]);
         setBaselineItems(createBaselineItems([item]));
-        setBaselineItems({ [item.id]: {
-          category: item.category,
-          patternType: item.patternType,
-          subcategory: item.subcategory,
-          colorName: item.colorName,
-          colorFamily: item.colorFamily
-        } });
         setLastScanTelemetry({ source: 'live', mode, latencyMs: Date.now() - startTs });
         setScanError(null);
       } else {
         const results = await analyzeClosetImage(base64);
         if (!results.length) {
-          trackEvent('scan_failed', { source: 'live', mode, reason: 'empty_result' });
-          setScanError('No wardrobe items were found. Step back slightly and retry with better lighting.');
-          setScanErrorSource('live');
+          reportScanFailure('live', 'empty_result');
           setDetectedItems(null);
           return;
         }
@@ -258,9 +244,7 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
         setScanError(null);
       }
     } catch (error) {
-      trackEvent('scan_failed', { source: 'live', mode, reason: 'processing_error' });
-      setScanError('Live scan failed. Ensure subject is well lit and retry.');
-      setScanErrorSource('live');
+      reportScanFailure('live', 'processing_error');
     } finally {
       setIsProcessing(false);
     }
@@ -270,13 +254,7 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
     if (detectedItems) {
       const hasInvalid = detectedItems.some(item => !item.subcategory.trim() || !item.colorName.trim());
       if (hasInvalid) {
-        trackEvent('scan_failed', {
-          source: lastScanTelemetry?.source ?? 'upload',
-          mode,
-          reason: 'validation_error'
-        });
-        setScanError('Please provide both subcategory and color name for all items before saving.');
-        setScanErrorSource(lastScanTelemetry?.source ?? 'upload');
+        reportScanFailure(lastScanTelemetry?.source ?? 'upload', 'validation_error');
         return;
       }
 
