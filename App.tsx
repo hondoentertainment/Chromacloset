@@ -15,14 +15,12 @@ import { isInternalToolsEnabled } from './services/runtimeConfig';
 const AppShell: React.FC = () => {
   const { items, scans, totalScannedCount, savedOutfits, closetIcon, addScanResult, resetCloset } = useCloset();
   const internalToolsEnabled = isInternalToolsEnabled();
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'scan' | 'explorer' | 'stylist' | 'internal'>(internalToolsEnabled ? 'dashboard' : 'dashboard');
   const [activeTab, setActiveTab] = useState<'dashboard' | 'scan' | 'explorer' | 'stylist' | 'internal'>('dashboard');
 
   useEffect(() => {
     trackEvent('app_opened', { source: 'browser' });
   }, []);
 
-  const handleScanComplete = (newItems: typeof items, telemetry?: ScanTelemetry) => {
   const handleScanComplete = (newItems: WardrobeItem[], telemetry?: ScanTelemetry) => {
     addScanResult(newItems);
     if (telemetry) {
