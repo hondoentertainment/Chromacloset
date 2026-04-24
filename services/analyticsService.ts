@@ -38,6 +38,9 @@ export type AnalyticsEventPayloadMap = {
   stylist_chat_opened: { persona: string };
   stylist_chat_message_sent: { persona: string; message_length: number };
   chat_failed: { reason: 'send_error' | 'session_unavailable'; persona: string };
+  chat_reinitialized: { persona: string };
+  outfits_retry_clicked: { persona: string; occasion: string };
+  scan_retry_clicked: { source: 'upload' | 'live'; mode: 'cloth' | 'qr' };
   dashboard_gap_suggestion_requested: { inventory_size: number };
   dashboard_gap_suggestion_generated: {
     item_type: string;
