@@ -254,7 +254,13 @@ export const StylistModule: React.FC = () => {
 
   const reinitializeChatSession = () => {
     chatSessionRef.current = createStylingChat(items, persona, agentMode);
+    trackEvent('chat_reinitialized', { persona });
     setChatError(null);
+  };
+
+  const handleRetryGeneration = () => {
+    trackEvent('outfits_retry_clicked', { persona, occasion });
+    void handleGenerate();
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -647,7 +653,7 @@ export const StylistModule: React.FC = () => {
                 <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
                   <p className="text-xs text-rose-700 font-semibold">{generationError}</p>
                   <button
-                    onClick={handleGenerate}
+                    onClick={handleRetryGeneration}
                     className="mt-2 px-3 py-1.5 rounded-lg bg-rose-600 text-white text-xs font-bold hover:bg-rose-700"
                   >
                     Retry generation

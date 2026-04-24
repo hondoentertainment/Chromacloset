@@ -332,6 +332,10 @@ export const ScanModule: React.FC<ScanModuleProps> = ({ onScanComplete }) => {
   };
 
   const triggerRetry = () => {
+    trackEvent('scan_retry_clicked', {
+      source: scanErrorSource ?? 'upload',
+      mode,
+    });
     setScanError(null);
     if (scanErrorSource === 'live' && mode === 'qr') {
       startCamera();
